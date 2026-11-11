@@ -190,7 +190,9 @@ a { color: var(--green); }
 .req.warm-on { border-color: var(--brass); }
 .req.warm-on::before { background: var(--brass); }
 .warm-box { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; font-size: 13.5px; }
-.small-select { width: auto; padding: 4px 8px; font-size: 13px; }
+.warm-check { align-items: center; font-weight: 600; }
+.warm-check input { margin: 0; }
+.input.mins { width: 4.5em; padding: 4px 6px; font-size: 13.5px; }
 
 /* ---------- work area ---------- */
 .work { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 28px; margin-top: 26px; align-items: start; }

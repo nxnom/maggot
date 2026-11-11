@@ -93,6 +93,8 @@ type Run struct {
 	subs    map[chan Message]struct{}
 	cmd     *exec.Cmd
 	done    chan struct{}
+	stop    chan struct{} // closed on cancel
+	stopped sync.Once
 	logFile *os.File
 	stdout  *os.File
 	stdoutN int64
@@ -202,6 +204,10 @@ type StartOptions struct {
 	OutDir string
 	Review bool
 	Origin string
+	// Before runs before the tool starts, while the run already shows as
+	// running (for example: wait for a warm process to finish loading). log
+	// adds a line to the run's output; stop is closed when the run is cancelled.
+	Before func(log func(string), stop <-chan struct{})
 }
 
 // StartWith creates the run folder and starts the tool. Output goes to
@@ -270,6 +276,7 @@ func (m *Manager) StartWith(t *toolbox.Tool, o StartOptions) (*Run, error) {
 		subs: map[chan Message]struct{}{},
 		cmd:  cmd,
 		done: make(chan struct{}),
+		stop: make(chan struct{}),
 	}
 	if man.Outputs != nil {
 		r.meta.OutputKind, r.meta.Format = man.Outputs.Kind, man.Outputs.Format
@@ -293,16 +300,59 @@ func (m *Manager) StartWith(t *toolbox.Tool, o StartOptions) (*Run, error) {
 	if err := m.saveMeta(r.meta); err != nil {
 		return nil, err
 	}
-	if err := cmd.Start(); err != nil {
-		r.logFile.Close()
-		r.stdout.Close()
-		os.RemoveAll(dir)
-		return nil, fmt.Errorf("start %s: %w", cmd.Args[0], err)
+	if o.Before == nil {
+		if err := cmd.Start(); err != nil {
+			r.logFile.Close()
+			r.stdout.Close()
+			os.RemoveAll(dir)
+			return nil, fmt.Errorf("start %s: %w", cmd.Args[0], err)
+		}
+		m.mu.Lock()
+		m.active[id] = r
+		m.mu.Unlock()
+		m.follow(r, man.ID, stdoutPipe, stderrPipe)
+		r.publish(Message{Type: "status", Status: ptr(r.Meta())})
+		return r, nil
 	}
+
+	// Start later: first run Before (it may take minutes), then the tool.
 	m.mu.Lock()
 	m.active[id] = r
 	m.mu.Unlock()
+	r.publish(Message{Type: "status", Status: ptr(r.Meta())})
+	go func() {
+		o.Before(func(line string) { r.publish(Message{Type: "err", Text: line}) }, r.stop)
+		var startErr error
+		select {
+		case <-r.stop:
+			startErr = errCancelledBeforeStart
+		default:
+			startErr = cmd.Start()
+		}
+		if startErr != nil {
+			if startErr != errCancelledBeforeStart {
+				r.publish(Message{Type: "err", Text: fmt.Sprintf("start %s: %v", cmd.Args[0], startErr)})
+			}
+			r.finish(startErr)
+			m.saveMeta(r.Meta())
+			r.publish(Message{Type: "status", Status: ptr(r.Meta())})
+			close(r.done)
+			m.mu.Lock()
+			delete(m.active, id)
+			m.mu.Unlock()
+			return
+		}
+		m.follow(r, man.ID, stdoutPipe, stderrPipe)
+	}()
+	return r, nil
+}
 
+var errCancelledBeforeStart = errors.New("cancelled before the tool started")
+
+// follow reads the started tool's output and finishes the run when it exits.
+func (m *Manager) follow(r *Run, toolID string, stdoutPipe, stderrPipe io.Reader) {
+	id, dir, cmd := r.meta.ID, r.meta.Dir, r.cmd
+	man := struct{ ID string }{toolID}
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() { defer wg.Done(); r.readLines(stdoutPipe, "out") }()
@@ -325,8 +375,6 @@ func (m *Manager) StartWith(t *toolbox.Tool, o StartOptions) (*Run, error) {
 		m.mu.Unlock()
 		m.prune(man.ID)
 	}()
-	r.publish(Message{Type: "status", Status: ptr(r.Meta())})
-	return r, nil
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -590,6 +638,7 @@ func (m *Manager) Cancel(id string) error {
 	r.mu.Lock()
 	r.cancel = true
 	r.mu.Unlock()
+	r.stopped.Do(func() { close(r.stop) })
 	go stopGroup(r.cmd, r.done)
 	return nil
 }

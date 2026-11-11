@@ -29,8 +29,8 @@ func (s *Server) apiWarmStatus(w http.ResponseWriter, r *http.Request) error {
 // apiWarmStart loads the tool in the background and returns when it is ready.
 func (s *Server) apiWarmStart(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
-		Ref string `json:"ref"`
-		For string `json:"for"`
+		Ref     string  `json:"ref"`
+		Minutes float64 `json:"minutes"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		return err
@@ -40,10 +40,11 @@ func (s *Server) apiWarmStart(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	idle := warm.DefaultIdle
-	if req.For != "" {
-		if idle, err = time.ParseDuration(req.For); err != nil || idle < time.Minute {
+	if req.Minutes != 0 {
+		if req.Minutes < 1 {
 			return errors.New("choose at least 1 minute")
 		}
+		idle = time.Duration(req.Minutes * float64(time.Minute))
 	}
 	if missing := workspace.Missing(t, s.store, s.checker.LookPath); len(missing) > 0 {
 		return errors.New("install what the tool needs first")
@@ -52,7 +53,8 @@ func (s *Server) apiWarmStart(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := warm.Start(t, idle, 5*time.Minute, env); err != nil {
+	// Do not wait for loading: the page shows "Loading…" and polls.
+	if _, _, err := warm.StartAsync(t, idle, env); err != nil {
 		return err
 	}
 	return ok(w, warmInfo(t.Manifest.ID, true))

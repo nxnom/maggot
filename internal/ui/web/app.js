@@ -309,8 +309,9 @@ async function toolPage(spec) {
   if (warmBox) {
     renderWarm(tool, warmBox, tool.warm);
     warmTimer = setInterval(async () => {
+      if (warmBox.contains(document.activeElement)) return; // do not redraw while the user types
       try { renderWarm(tool, warmBox, await get(`/api/tool/warm?ref=${q(tool.ref)}`)); } catch { /* page left */ }
-    }, 10000);
+    }, 4000);
   }
   const secrets = h("div");
 
@@ -435,7 +436,11 @@ async function toolPage(spec) {
     e.preventDefault();
     runBtn.disabled = true;
     try {
-      const meta = await post("/api/runs", { ref: tool.ref, values: form.values(), skip_checks: skip.querySelector("input").checked, out_dir: outDir() });
+      const wp = m.warm ? warmPref(tool) : null;
+      const meta = await post("/api/runs", {
+        ref: tool.ref, values: form.values(), skip_checks: skip.querySelector("input").checked, out_dir: outDir(),
+        keep_warm: wp && wp.on ? wp.minutes : 0,
+      });
       await runView.show(meta.id);
       loadHistory(meta.id);
     } catch (err) {
@@ -478,40 +483,51 @@ async function toolPage(spec) {
   checkHealth(tool, reqs);
 }
 
-// renderWarm shows whether a slow-loading tool is kept in memory, with
-// buttons to warm it for a while or stop it.
+// Warm control: "Keep in memory between runs for N min". Checking it does
+// not load anything; the next Run loads the tool once and keeps it. The
+// countdown starts after each run. Unchecking stops it and frees the memory.
+function warmPref(tool) {
+  const p = store("warm:" + tool.ref) || {};
+  return { on: !!p.on, minutes: p.minutes > 0 ? p.minutes : 10 };
+}
+
 function renderWarm(tool, el, info) {
   const st = info && info.status;
-  if (st && st.running) {
-    const mins = Math.max(1, Math.round(st.idle_left / 60));
-    const stop = h("button", { class: "btn small", type: "button" }, "Stop");
-    stop.addEventListener("click", async () => {
-      stop.disabled = true;
-      try { renderWarm(tool, el, await del(`/api/tool/warm?ref=${q(tool.ref)}`)); toast("Stopped. Memory is free again."); } catch (e) { toast(e.message, true); stop.disabled = false; }
-    });
-    return clear(el,
-      h("span", { class: "req warm-on" }, `Warm: runs start fast`),
-      h("span", { class: "muted" }, `${st.jobs} job${st.jobs === 1 ? "" : "s"}, stops after ${mins} min without a job`),
-      stop);
-  }
-  if (st) {
-    return clear(el, h("span", { class: "req wait" }, "Loading into memory…"));
-  }
-  const dur = h("select", { class: "select small-select", "aria-label": "Keep warm for" },
-    [["10m", "10 min"], ["30m", "30 min"], ["1h", "1 hour"], ["2h", "2 hours"]].map(([v, l]) => h("option", { value: v }, l)));
-  const go = h("button", { class: "btn small", type: "button" }, "Keep warm");
-  go.addEventListener("click", async () => {
-    go.disabled = true;
-    go.textContent = "Loading…";
-    clear(el, h("span", { class: "req wait" }, "Loading into memory…"), go);
-    try {
-      renderWarm(tool, el, await post("/api/tool/warm", { ref: tool.ref, for: dur.value }));
-      toast(`${tool.manifest.name} is warm.`);
-    } catch (e) { toast(e.message, true); renderWarm(tool, el, null); }
+  const pref = warmPref(tool);
+  // No saved choice yet: show what the running process was started with.
+  if (!store("warm:" + tool.ref) && st && st.idle) pref.minutes = Math.max(1, Math.round(st.idle / 6e10));
+  const box = h("input", { type: "checkbox", checked: pref.on || !!st });
+  const mins = h("input", {
+    class: "input mins", type: "number", min: "1", step: "1", value: String(pref.minutes),
+    "aria-label": "Minutes to keep it in memory after a run",
   });
+  const save = () => store("warm:" + tool.ref, { on: box.checked, minutes: Math.max(1, Number(mins.value) || 10) });
+  mins.addEventListener("change", () => { if (Number(mins.value) < 1) mins.value = "1"; save(); });
+  box.addEventListener("change", async () => {
+    save();
+    if (!box.checked && st) {
+      try { renderWarm(tool, el, await del(`/api/tool/warm?ref=${q(tool.ref)}`)); toast("Stopped. Memory is free again."); }
+      catch (e) { toast(e.message, true); }
+      return;
+    }
+    renderWarm(tool, el, info);
+  });
+
+  let status;
+  if (st && st.running) {
+    const left = Math.max(1, Math.round(st.idle_left / 60));
+    status = h("span", { class: "req warm-on" }, st.busy
+      ? "In memory, running a job"
+      : `In memory: stops in ${left} min without a run (${st.jobs} run${st.jobs === 1 ? "" : "s"} so far)`);
+  } else if (st) {
+    status = h("span", { class: "req wait" }, "Loading into memory…");
+  } else {
+    status = h("span", { class: "muted" }, box.checked ? "Not loaded yet: the next run loads it and keeps it." : "Loads on every run.");
+  }
   clear(el,
-    h("span", { class: "req wait" }, "Cold: loads on every run"),
-    h("span", { class: "muted" }, "Keep it in memory for"), dur, go);
+    h("label", { class: "check warm-check" }, box, h("span", null, "Keep in memory between runs for")),
+    mins, h("span", null, "min"),
+    status);
 }
 
 async function openTool(tool) {

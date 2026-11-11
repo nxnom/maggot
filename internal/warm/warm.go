@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -104,56 +105,11 @@ func Env(t *toolbox.Tool) []string {
 	return []string{EnvSocket + "=" + p}
 }
 
-// Start launches the tool's serve mode in the background and waits until it
-// answers (loading can take a while) or wait passes.
+// Start launches the tool's serve mode and waits until it answers (loading
+// can take a while) or wait passes.
 func Start(t *toolbox.Tool, idle, wait time.Duration, extraEnv []string) (*Status, error) {
-	m := t.Manifest
-	if m.Warm == nil {
-		return nil, fmt.Errorf("%s cannot stay warm (no \"warm\" in tool.json)", t.Ref())
-	}
-	if st, _ := Get(m.ID); st != nil && st.Running {
-		return st, fmt.Errorf("%s is already warm; stop it first to change the time", t.Ref())
-	}
-	if idle <= 0 {
-		idle = DefaultIdle
-	}
-	d, err := dir()
+	rec, exited, err := StartAsync(t, idle, extraEnv)
 	if err != nil {
-		return nil, err
-	}
-	sock, err := SocketPath(m.ID)
-	if err != nil {
-		return nil, err
-	}
-	for _, p := range []string{d, filepath.Dir(sock)} {
-		if err := os.MkdirAll(p, 0o700); err != nil {
-			return nil, err
-		}
-	}
-	os.Remove(sock)
-	logPath := filepath.Join(d, m.ID+".log")
-	logFile, err := os.Create(logPath)
-	if err != nil {
-		return nil, err
-	}
-	defer logFile.Close()
-	cmd, err := runner.Command(t.Dir, m, m.Warm.Args, runner.Options{
-		Dir: d,
-		ExtraEnv: append(append([]string{}, extraEnv...),
-			EnvSocket+"="+sock, EnvIdle+"="+strconv.Itoa(int(idle.Seconds()))),
-	})
-	if err != nil {
-		return nil, err
-	}
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	detach(cmd)
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start %s: %w", cmd.Args[0], err)
-	}
-	exited := make(chan struct{})
-	go func() { cmd.Wait(); close(exited) }() // reaps the child in long-lived processes
-	rec := Record{ID: m.ID, Ref: t.Ref(), PID: cmd.Process.Pid, Socket: sock, Idle: idle, Started: time.Now(), Log: logPath}
-	if err := save(rec); err != nil {
 		return nil, err
 	}
 	deadline := time.After(wait)
@@ -162,17 +118,126 @@ func Start(t *toolbox.Tool, idle, wait time.Duration, extraEnv []string) (*Statu
 	for {
 		select {
 		case <-exited:
-			remove(m.ID)
-			return nil, fmt.Errorf("%s stopped while loading:\n%s", t.Ref(), tail(logPath, 20))
+			remove(rec.ID)
+			return nil, fmt.Errorf("%s stopped while loading:\n%s", t.Ref(), tail(rec.Log, 20))
 		case <-deadline:
-			return &Status{Record: rec}, fmt.Errorf("%s is still loading after %s; check `maggot warm list` (log: %s)", t.Ref(), wait, logPath)
+			return &Status{Record: *rec}, fmt.Errorf("%s is still loading after %s; check `maggot warm list` (log: %s)", t.Ref(), wait, rec.Log)
 		case <-tick.C:
-			if st, err := query(sock); err == nil {
-				st.Record = rec
+			if st, err := query(rec.Socket); err == nil {
+				st.Record = *rec
 				return st, nil
 			}
 		}
 	}
+}
+
+// StartAsync launches the tool's serve mode in the background and returns at
+// once. exited is closed if the process ends.
+func StartAsync(t *toolbox.Tool, idle time.Duration, extraEnv []string) (*Record, <-chan struct{}, error) {
+	m := t.Manifest
+	if m.Warm == nil {
+		return nil, nil, fmt.Errorf("%s cannot stay warm (no \"warm\" in tool.json)", t.Ref())
+	}
+	if st, _ := Get(m.ID); st != nil {
+		if st.Running {
+			return nil, nil, fmt.Errorf("%s is already warm; stop it first to change the time", t.Ref())
+		}
+		return nil, nil, fmt.Errorf("%s is already loading", t.Ref())
+	}
+	if idle <= 0 {
+		idle = DefaultIdle
+	}
+	d, err := dir()
+	if err != nil {
+		return nil, nil, err
+	}
+	sock, err := SocketPath(m.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, p := range []string{d, filepath.Dir(sock)} {
+		if err := os.MkdirAll(p, 0o700); err != nil {
+			return nil, nil, err
+		}
+	}
+	os.Remove(sock)
+	logPath := filepath.Join(d, m.ID+".log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer logFile.Close()
+	cmd, err := runner.Command(t.Dir, m, m.Warm.Args, runner.Options{
+		Dir: d,
+		ExtraEnv: append(append([]string{}, extraEnv...),
+			EnvSocket+"="+sock, EnvIdle+"="+strconv.Itoa(int(idle.Seconds()))),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	detach(cmd)
+	if err := cmd.Start(); err != nil {
+		return nil, nil, fmt.Errorf("start %s: %w", cmd.Args[0], err)
+	}
+	exited := make(chan struct{})
+	go func() { cmd.Wait(); close(exited) }() // reaps the child in long-lived processes
+	rec := Record{ID: m.ID, Ref: t.Ref(), PID: cmd.Process.Pid, Socket: sock, Idle: idle, Started: time.Now(), Log: logPath}
+	if err := save(rec); err != nil {
+		return nil, nil, err
+	}
+	return &rec, exited, nil
+}
+
+// WaitLoaded waits until the tool's warm process answers, it stops, stop is
+// closed, or max passes. New lines of its log are passed to log, so a run can
+// show the loading progress. It reports whether the process is ready.
+func WaitLoaded(id string, max time.Duration, stop <-chan struct{}, log func(string)) bool {
+	var offset int64
+	logPath := ""
+	flush := func() {
+		if logPath == "" || log == nil {
+			return
+		}
+		f, err := os.Open(logPath)
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		f.Seek(offset, 0)
+		b, _ := io.ReadAll(f)
+		// Only whole lines; progress bars redraw with \r, keep the last state.
+		if i := strings.LastIndexAny(string(b), "\n"); i >= 0 {
+			for _, line := range strings.Split(string(b[:i]), "\n") {
+				if k := strings.LastIndex(line, "\r"); k >= 0 {
+					line = line[k+1:]
+				}
+				if strings.TrimSpace(line) != "" {
+					log(line)
+				}
+			}
+			offset += int64(i + 1)
+		}
+	}
+	deadline := time.Now().Add(max)
+	for time.Now().Before(deadline) {
+		st, _ := Get(id)
+		if st == nil {
+			flush()
+			return false
+		}
+		logPath = st.Log
+		flush()
+		if st.Running {
+			return true
+		}
+		select {
+		case <-stop:
+			return false
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return false
 }
 
 // Get returns the status of a warm tool, or nil when it is not warm.

@@ -99,6 +99,9 @@ maggot ui            # opens http://127.0.0.1:26244 in your browser
   are previewed (images, video, audio) and can be opened, downloaded or shown
   in the file manager. The newest `runs_keep` runs per tool are kept (default 30).
 - Missing requirements can be installed from the tool page (after you confirm).
+- Tools that support it have "Keep in memory between runs for N min". When it
+  is checked, the next run loads the tool once and keeps it; the minutes count
+  from the end of each run. Unchecking it frees the memory at once.
 - "About this tool and its code" shows the README and every file (read-only),
   with a button to open the tool folder.
 - Import `.maggot` files by dropping them on the page.

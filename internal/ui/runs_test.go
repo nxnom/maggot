@@ -313,3 +313,32 @@ func TestExternalOutputFolder(t *testing.T) {
 		}
 	}
 }
+
+func TestCancelWhileWaitingBeforeStart(t *testing.T) {
+	tool := makeTool(t, workerManifest, workerScript)
+	m := NewManager(t.TempDir(), 10)
+	r, err := m.StartWith(tool, StartOptions{Values: map[string]any{"name": "x"}, Before: func(log func(string), stop <-chan struct{}) {
+		log("waiting for something")
+		<-stop
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if r.Meta().Status != StatusRunning {
+		t.Fatal("should show as running while waiting")
+	}
+	m.Cancel(r.Meta().ID)
+	meta := waitRun(t, r)
+	if meta.Status != StatusCancelled {
+		t.Fatalf("status %s", meta.Status)
+	}
+	if _, err := os.Stat(filepath.Join(meta.OutDir, "x.txt")); err == nil {
+		t.Fatal("the tool must not have started")
+	}
+	// Before that returns normally: the tool then runs.
+	r, _ = m.StartWith(tool, StartOptions{Values: map[string]any{"name": "y"}, Before: func(func(string), <-chan struct{}) {}})
+	if meta := waitRun(t, r); meta.Status != StatusSucceeded {
+		t.Fatalf("after before: %+v", meta)
+	}
+}

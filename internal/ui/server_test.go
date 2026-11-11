@@ -542,6 +542,18 @@ func TestToolFilesViewer(t *testing.T) {
 	}
 }
 
+func waitWarm(t *testing.T, id string) *warm.Status {
+	t.Helper()
+	for i := 0; i < 100; i++ {
+		if st, _ := warm.Get(id); st != nil && st.Running {
+			return st
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Fatalf("%s did not become warm", id)
+	return nil
+}
+
 func TestWarmOverHTTP(t *testing.T) {
 	if _, err := exec.LookPath("uv"); err != nil {
 		t.Skip("uv not installed")
@@ -559,25 +571,15 @@ func TestWarmOverHTTP(t *testing.T) {
 	if !info.Supported || info.Status != nil {
 		t.Fatalf("cold: %+v", info)
 	}
-	ts.do(t, "POST", "/api/tool/warm", map[string]any{"ref": "warmui", "for": "30s"}, 400, nil)
-	ts.do(t, "POST", "/api/tool/warm", map[string]any{"ref": "warmui", "for": "5m"}, 200, &info)
-	if info.Status == nil || !info.Status.Running {
-		t.Fatalf("warm: %+v", info)
+	ts.do(t, "POST", "/api/tool/warm", map[string]any{"ref": "warmui", "minutes": 0.5}, 400, nil)
+	// Starting returns at once; the tool loads in the background.
+	ts.do(t, "POST", "/api/tool/warm", map[string]any{"ref": "warmui", "minutes": 3}, 200, &info)
+	if info.Status == nil {
+		t.Fatalf("should be loading or warm: %+v", info)
 	}
-	// A UI run goes through the warm process.
-	in := filepath.Join(t.TempDir(), "n.txt")
-	os.WriteFile(in, []byte("x"), 0o644)
-	var meta RunMeta
-	ts.do(t, "POST", "/api/runs", map[string]any{"ref": "warmui", "values": map[string]any{"files": []string{in}, "upper": true}}, 200, &meta)
-	if r, _ := ts.s.runs.Active(meta.ID); r != nil {
-		<-r.Done()
-	}
-	ts.do(t, "GET", "/api/tool/warm?ref=warmui", nil, 200, &info)
-	if info.Status == nil || info.Status.Jobs != 1 {
-		t.Fatalf("job should go to the warm process: %+v", info.Status)
-	}
-	if b, _ := os.ReadFile(filepath.Join(meta.OutDir, "n.out.txt")); string(b) != "X" {
-		t.Fatalf("output: %q", b)
+	st := waitWarm(t, "warmui")
+	if st.Idle != 3*time.Minute {
+		t.Fatalf("idle %v", st.Idle)
 	}
 	info.Status = nil // the response has no "status" when the tool is cold
 	ts.do(t, "DELETE", "/api/tool/warm?ref=warmui", nil, 200, &info)
@@ -585,4 +587,62 @@ func TestWarmOverHTTP(t *testing.T) {
 		t.Fatalf("stopped: %+v", info)
 	}
 	ts.do(t, "POST", "/api/tool/warm", map[string]any{"ref": "worker"}, 400, nil)
+}
+
+// A run with keep_warm loads the tool once, waits for it and uses it; the
+// next run goes straight to the warm process.
+func TestRunKeepsToolWarm(t *testing.T) {
+	if _, err := exec.LookPath("uv"); err != nil {
+		t.Skip("uv not installed")
+	}
+	ts := newTestServer(t)
+	if _, err := scaffold.Create(filepath.Join(ts.tb, "tools"), scaffold.Options{ID: "keepme", Lang: "python", Warm: true}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { warm.Stop("keepme") })
+	in := filepath.Join(t.TempDir(), "n.txt")
+	os.WriteFile(in, []byte("x"), 0o644)
+	runOnce := func() RunMeta {
+		var meta RunMeta
+		ts.do(t, "POST", "/api/runs", map[string]any{"ref": "keepme", "keep_warm": 7,
+			"values": map[string]any{"files": []string{in}, "upper": true}}, 200, &meta)
+		r, _ := ts.s.runs.Active(meta.ID)
+		if r == nil {
+			t.Fatal("run not active")
+		}
+		<-r.Done()
+		got := r.Meta()
+		if got.Status != StatusSucceeded {
+			log, _ := ts.s.runs.Log(got.ID)
+			t.Fatalf("run failed: %+v %+v", got, log)
+		}
+		return got
+	}
+	first := runOnce()
+	log, _ := ts.s.runs.Log(first.ID)
+	var text []string
+	for _, m := range log {
+		text = append(text, m.Text)
+	}
+	if !strings.Contains(strings.Join(text, "\n"), "Loading into memory") {
+		t.Fatalf("first run should say it loads: %v", text)
+	}
+	st := waitWarm(t, "keepme")
+	if st.Jobs != 1 || st.Idle != 7*time.Minute {
+		t.Fatalf("first run should go to the warm process: %+v", st)
+	}
+	runOnce()
+	if st, _ := warm.Get("keepme"); st == nil || st.Jobs != 2 {
+		t.Fatalf("second run: %+v", st)
+	}
+	// Without keep_warm a cold tool stays cold.
+	warm.Stop("keepme")
+	var meta RunMeta
+	ts.do(t, "POST", "/api/runs", map[string]any{"ref": "keepme", "values": map[string]any{"files": []string{in}}}, 200, &meta)
+	if r, _ := ts.s.runs.Active(meta.ID); r != nil {
+		<-r.Done()
+	}
+	if st, _ := warm.Get("keepme"); st != nil {
+		t.Fatalf("should stay cold: %+v", st)
+	}
 }

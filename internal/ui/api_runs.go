@@ -22,6 +22,8 @@ func (s *Server) apiStartRun(w http.ResponseWriter, r *http.Request) error {
 		Values     map[string]any `json:"values"`
 		SkipChecks bool           `json:"skip_checks"`
 		OutDir     string         `json:"out_dir"`
+		// KeepWarm (minutes) keeps the tool in memory after this run.
+		KeepWarm float64 `json:"keep_warm"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		return err
@@ -40,17 +42,34 @@ func (s *Server) apiStartRun(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	env = append(env, warm.Env(t)...)
+	opts := StartOptions{Values: req.Values, OutDir: req.OutDir, Origin: "ui"}
 	if t.Manifest.Warm != nil {
-		if st, _ := warm.Get(t.Manifest.ID); st.Loading() {
-			return &httpError{code: http.StatusConflict,
-				msg: "the tool is still loading into memory; run it when it shows Warm (a run now would load a second copy)"}
+		id := t.Manifest.ID
+		st, _ := warm.Get(id)
+		if st == nil && req.KeepWarm > 0 {
+			idle := time.Duration(req.KeepWarm * float64(time.Minute))
+			if _, _, err := warm.StartAsync(t, idle, env); err != nil {
+				return err
+			}
+			st, _ = warm.Get(id)
+		}
+		// While it loads, this run waits and then uses it, instead of
+		// loading a second copy.
+		if st != nil && !st.Running {
+			opts.Before = func(log func(string), stop <-chan struct{}) {
+				log("Loading into memory. Later runs skip this while the tool stays warm.")
+				if !warm.WaitLoaded(id, 15*time.Minute, stop, log) {
+					log("The warm process is not ready, so this run loads the tool itself.")
+				}
+			}
 		}
 	}
+	env = append(env, warm.Env(t)...)
+	opts.ExtraEnv = env
 	if req.OutDir != "" && !filepath.IsAbs(config.ExpandHome(req.OutDir)) {
 		return errors.New("choose an output folder (absolute path)")
 	}
-	run, err := s.runs.StartWith(t, StartOptions{Values: req.Values, ExtraEnv: env, OutDir: req.OutDir, Origin: "ui"})
+	run, err := s.runs.StartWith(t, opts)
 	if err != nil {
 		return err
 	}
