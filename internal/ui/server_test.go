@@ -499,3 +499,43 @@ func TestTakeOverHTTP(t *testing.T) {
 	ts.do(t, "GET", "/api/runs/"+meta.ID, nil, 404, nil)
 	ts.do(t, "POST", "/api/runs/"+meta.ID+"/take", map[string]any{"dest": ""}, 400, nil)
 }
+
+func TestToolFilesViewer(t *testing.T) {
+	ts := newTestServer(t)
+	dir := filepath.Join(ts.tb, "tools", "worker")
+	os.MkdirAll(filepath.Join(dir, "node_modules", "x"), 0o755)
+	os.WriteFile(filepath.Join(dir, "node_modules", "x", "a.js"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Worker"), 0o644)
+	os.WriteFile(filepath.Join(dir, "logo.png"), []byte{0x89, 'P', 'N', 'G', 0, 0, 1}, 0o644)
+
+	var list struct {
+		Files []toolFile
+	}
+	ts.do(t, "GET", "/api/tool/files?ref=worker", nil, 200, &list)
+	var paths []string
+	for _, f := range list.Files {
+		paths = append(paths, f.Path)
+	}
+	got := strings.Join(paths, ",")
+	if !strings.HasPrefix(got, "tool.json,run,README.md") || !strings.Contains(got, "node_modules/") || strings.Contains(got, "a.js") {
+		t.Fatalf("files: %s", got)
+	}
+	var file struct {
+		Text   string
+		Binary bool
+	}
+	ts.do(t, "GET", "/api/tool/file?ref=worker&path=run", nil, 200, &file)
+	if !strings.HasPrefix(file.Text, "#!/bin/sh") {
+		t.Fatalf("text: %+v", file)
+	}
+	ts.do(t, "GET", "/api/tool/file?ref=worker&path=logo.png", nil, 200, &file)
+	if !file.Binary {
+		t.Fatal("png should be binary")
+	}
+	ts.do(t, "GET", "/api/tool/file?ref=worker&path=../../maggot.json", nil, 404, nil)
+	ts.do(t, "POST", "/api/tool/open", map[string]any{"ref": "worker", "how": "folder"}, 200, nil)
+	if len(ts.opened) == 0 || ts.opened[len(ts.opened)-1] != dir {
+		t.Fatalf("open folder: %v", ts.opened)
+	}
+	ts.do(t, "POST", "/api/tool/open", map[string]any{"ref": "worker", "how": "nope"}, 400, nil)
+}

@@ -297,6 +297,7 @@ async function toolPage(spec) {
       h("span", null, draft ? "Draft" : tool.ref),
       m.categories && m.categories.length ? h("span", null, m.categories.join(", ")) : null),
     h("div", { class: "actions" },
+      tool.editor ? h("button", { class: "btn small", type: "button", onclick: () => openTool(tool, "editor") }, `Open in ${tool.editor}`) : null,
       h("a", { class: "btn small", href: `/api/export?ref=${q(tool.ref)}` }, "Export"),
       draft ? null : h("button", { class: "btn small", type: "button", onclick: async () => {
         if (!(await confirmDialog(`Delete ${m.name}?`, h("div", null, h("p", null, "This deletes the tool folder:"), h("p", null, h("code", null, tool.dir))), "Delete tool", true))) return;
@@ -437,14 +438,22 @@ async function toolPage(spec) {
   });
 
   // about
+  const files = h("div", { class: "code-browser" });
   const about = h("details", { class: "panel", style: "margin-top:28px" },
-    h("summary", { class: "panel-head", style: "cursor:pointer" }, h("h2", null, "About this tool")),
+    h("summary", { class: "panel-head", style: "cursor:pointer" }, h("h2", null, "About this tool and its code")),
     h("div", { class: "panel-body" },
+      h("div", { class: "row", style: "flex-wrap:wrap;margin-bottom:14px" },
+        h("button", { class: "btn small", type: "button", onclick: () => openTool(tool, "folder") }, "Show folder"),
+        h("button", { class: "btn small", type: "button", disabled: !tool.editor, title: tool.editor ? null : 'Set "editor" in config.json', onclick: () => openTool(tool, "editor") },
+          tool.editor ? `Open in ${tool.editor}` : "No editor found")),
       h("dl", { class: "kv" },
         h("dt", null, "Folder"), h("dd", null, h("code", null, tool.dir)),
         h("dt", null, "Without maggot"), h("dd", null, h("code", null, tool.direct + " …")),
         h("dt", null, "From an agent"), h("dd", null, h("code", null, `maggot run ${tool.ref} -- …`))),
-      tool.readme ? h("div", { style: "margin-top:18px" }, renderMarkdown(tool.readme)) : null));
+      tool.readme ? h("div", { style: "margin-top:18px" }, renderMarkdown(tool.readme)) : null,
+      h("h3", { style: "font-size:15px;margin:22px 0 10px" }, "Files"),
+      files));
+  about.addEventListener("toggle", () => { if (about.open && !files.childNodes.length) loadFiles(tool, files); }, { once: false });
 
   clear(main,
     plate,
@@ -455,11 +464,50 @@ async function toolPage(spec) {
     about);
   page = { cleanup: () => runView.stop() };
 
-  const runParam = new URLSearchParams(query || "").get("run");
+  const params = new URLSearchParams(query || "");
+  const runParam = params.get("run");
+  if (params.has("code")) { about.open = true; about.scrollIntoView(); }
   loadHistory(runParam);
   if (runParam) runView.show(runParam).catch(() => {});
   renderSecrets(tool, secrets);
   checkHealth(tool, reqs);
+}
+
+async function openTool(tool, how) {
+  try { await post("/api/tool/open", { ref: tool.ref, how }); } catch (e) { toast(e.message, true); }
+}
+
+// loadFiles shows the tool's files (read-only) with a code view.
+async function loadFiles(tool, el) {
+  let res;
+  try { res = await get(`/api/tool/files?ref=${q(tool.ref)}`); } catch (e) { return toast(e.message, true); }
+  const view = h("div", { class: "code-view" });
+  const list = h("ul", { class: "file-list", "aria-label": "Files" });
+  let current = null;
+  async function show(f, btn) {
+    if (current) current.removeAttribute("aria-current");
+    btn.setAttribute("aria-current", "true");
+    current = btn;
+    clear(view, h("p", { class: "muted" }, "Loading…"));
+    let file;
+    try { file = await get(`/api/tool/file?ref=${q(tool.ref)}&path=${q(f.path)}`); } catch (e) { return clear(view, h("p", { class: "notice" }, e.message)); }
+    if (file.binary) return clear(view, h("div", { class: "code-head" }, h("code", null, f.path), h("span", { class: "muted" }, bytes(file.size))), h("p", { class: "muted", style: "padding:12px" }, "Binary file, not shown."));
+    const lines = file.text.replace(/\n$/, "").split("\n");
+    clear(view,
+      h("div", { class: "code-head" }, h("code", null, f.path), h("span", { class: "muted" }, `${lines.length} lines, ${bytes(file.size)}`)),
+      file.truncated ? h("p", { class: "notice", style: "margin:8px" }, "Only the first 512 KB is shown.") : null,
+      h("pre", { class: "code", tabindex: "0" }, lines.map((l) => h("span", { class: "ln" }, l + "\n"))));
+  }
+  const items = res.files.map((f) => {
+    if (f.skipped) return h("li", null, h("span", { class: "skipped", title: "Not listed" }, f.path));
+    const btn = h("button", { type: "button" }, h("span", null, f.path), h("span", { class: "size" }, bytes(f.size)));
+    btn.addEventListener("click", () => show(f, btn));
+    return h("li", null, btn);
+  });
+  clear(list, items);
+  clear(el, list, view);
+  const first = list.querySelector("button");
+  if (first) first.click();
 }
 
 function draftNote(draft, m) {

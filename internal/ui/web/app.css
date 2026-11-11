@@ -343,6 +343,34 @@ details.advanced[open] > summary { margin-bottom: 10px; }
 .md th, .md td { border: 1px solid var(--line); padding: 6px 10px; vertical-align: top; }
 .md th { background: var(--sunk); font-weight: 650; }
 
+/* ---------- code browser ---------- */
+.code-browser { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 860px) { .code-browser { grid-template-columns: 1fr; } }
+.file-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 6px; max-height: 520px; overflow: auto; background: var(--paper); }
+.file-list button {
+  width: 100%; display: flex; gap: 8px; justify-content: space-between; text-align: left;
+  border: 0; background: none; padding: 6px 10px; cursor: pointer; font-family: var(--mono); font-size: 12.5px;
+  border-bottom: 1px solid var(--line);
+}
+.file-list li:last-child button { border-bottom: 0; }
+.file-list button:hover { background: var(--sunk); }
+.file-list button[aria-current="true"] { background: var(--green); color: var(--on-green); }
+.file-list .size { color: var(--ink-2); flex: none; }
+.file-list button[aria-current="true"] .size { color: inherit; opacity: .8; }
+.file-list .skipped { display: block; padding: 6px 10px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); border-bottom: 1px solid var(--line); }
+.code-view { border: 1px solid var(--line); border-radius: 6px; background: var(--paper); min-width: 0; }
+.code-head { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13px; flex-wrap: wrap; }
+pre.code {
+  margin: 0; padding: 10px 0; max-height: 520px; overflow: auto; font-size: 12.5px; line-height: 1.55;
+  counter-reset: ln; tab-size: 4;
+}
+pre.code .ln { display: block; padding: 0 14px 0 0; white-space: pre; }
+pre.code .ln::before {
+  counter-increment: ln; content: counter(ln);
+  display: inline-block; width: 3.6em; padding-right: 1em; margin-right: 0; text-align: right;
+  color: var(--ink-2); opacity: .7; user-select: none;
+}
+
 /* ---------- dialogs ---------- */
 dialog {
   border: 1px solid var(--line-2); border-radius: 10px; padding: 0; background: var(--panel); color: var(--ink);

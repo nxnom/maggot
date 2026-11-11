@@ -177,6 +177,9 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/runs/{id}/files/{path...}", s.apiRunFile)
 	api("POST /api/reveal", s.apiReveal)
 	api("POST /api/drafts", s.apiAddDraft)
+	api("GET /api/tool/files", s.apiToolFiles)
+	api("GET /api/tool/file", s.apiToolFile)
+	api("POST /api/tool/open", s.apiOpenTool)
 	api("DELETE /api/drafts", s.apiRemoveDraft)
 
 	return s.checkHost(mux)

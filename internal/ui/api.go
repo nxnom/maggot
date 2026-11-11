@@ -279,7 +279,7 @@ func (s *Server) apiTool(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]any{
 		"ref": t.Ref(), "toolbox": t.Toolbox.Handle, "dir": t.Dir, "manifest": t.Manifest,
 		"readme": string(readme), "direct": shellJoin(argv), "env": workspace.Env(s.store, t),
-		"last_test": last, "draft": draft,
+		"last_test": last, "draft": draft, "editor": s.editorName(),
 	})
 }
 
