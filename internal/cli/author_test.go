@@ -76,3 +76,48 @@ func TestNewWarnsAboutSimilarTools(t *testing.T) {
 		t.Fatalf("unexpected warning: %q", e)
 	}
 }
+
+func TestTestAllRecordsResults(t *testing.T) {
+	isolate(t)
+	tb := newToolbox(t, "main")
+	work := t.TempDir()
+	run(t, "new", "good-tool", "--lang", "sh", "--dir", work)
+	run(t, "import", "--yes", filepath.Join(work, "good-tool"))
+	addTool(t, tb, "hello", helloManifest, helloScript) // no tests
+	run(t, "new", "bad-tool", "--lang", "sh", "--dir", work)
+	os.WriteFile(filepath.Join(work, "bad-tool", "run.sh"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	run(t, "import", "--yes", filepath.Join(work, "bad-tool"))
+
+	if _, out, _ := run(t, "list"); !strings.Contains(out, "TESTED") || !strings.Contains(out, "main/good-tool  0.1.0    -") {
+		t.Fatalf("untested list: %s", out)
+	}
+	code, out, _ := run(t, "test", "--all")
+	if code != 1 || !strings.Contains(out, "✓ main/good-tool: 3 passed") || !strings.Contains(out, "✗ main/bad-tool") ||
+		!strings.Contains(out, "- main/hello: no tests") || !strings.Contains(out, "3 tools: 1 ok, 1 failed, 1 without tests") {
+		t.Fatalf("test --all: code=%d\n%s", code, out)
+	}
+	_, out, _ = run(t, "list")
+	if !strings.Contains(out, "ok 0m") || !strings.Contains(out, "FAIL 0m") {
+		t.Fatalf("list after test: %s", out)
+	}
+	if _, out, _ := run(t, "info", "bad-tool"); !strings.Contains(out, "tested:  FAILED") {
+		t.Fatalf("info: %s", out)
+	}
+	if _, out, _ := run(t, "info", "hello"); !strings.Contains(out, "tested:  never") {
+		t.Fatalf("info never: %s", out)
+	}
+	// A scratch folder outside the toolboxes is not recorded.
+	run(t, "new", "scratch-tool", "--lang", "sh", "--dir", work)
+	run(t, "test", filepath.Join(work, "scratch-tool"))
+	var listed struct{ Tools []toolSummary }
+	_, out, _ = run(t, "list", "--json")
+	json.Unmarshal([]byte(out), &listed)
+	for _, tl := range listed.Tools {
+		if tl.ID == "good-tool" && (tl.LastTest == nil || !tl.LastTest.OK) {
+			t.Fatalf("json last_test: %+v", tl)
+		}
+	}
+	if code, _, e := run(t, "test"); code == 0 || !strings.Contains(e, "--all") {
+		t.Fatalf("no args: %s", e)
+	}
+}

@@ -380,7 +380,17 @@ async function checkHealth(tool, el) {
     return [chip, btn];
   });
   const missingEnv = health.env.filter((e) => e.required && !e.set && !e.secret).map((e) => h("span", { class: "req bad" }, `env ${e.name} not set`));
-  clear(el, chips, missingEnv, !chips.length && !missingEnv.length ? h("span", { class: "req" }, "No requirements") : null);
+  clear(el, testChip(tool), chips, missingEnv, !chips.length && !missingEnv.length ? h("span", { class: "req" }, "No requirements") : null);
+}
+
+// testChip shows the last `maggot test` result, so broken tools stand out.
+function testChip(tool) {
+  const t = tool.last_test;
+  const hint = `Run: maggot test ${tool.ref}`;
+  if (!t) return h("span", { class: "req wait", title: hint }, "Not tested");
+  if (t.version !== tool.manifest.version) return h("span", { class: "req wait", title: hint }, `Tested v${t.version} only`);
+  if (t.ok) return h("span", { class: "req", title: `${t.passed} passed, ${t.skipped} skipped` }, `Tests passed ${ago(t.at)}`);
+  return h("span", { class: "req bad", title: t.error || `${t.failed} failed. ${hint}` }, `Tests failed ${ago(t.at)}`);
 }
 
 function renderSecrets(tool, el) {

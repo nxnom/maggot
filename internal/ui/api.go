@@ -21,6 +21,7 @@ import (
 	"github.com/nxnom/maggot/internal/pack"
 	"github.com/nxnom/maggot/internal/runner"
 	"github.com/nxnom/maggot/internal/search"
+	"github.com/nxnom/maggot/internal/testlog"
 	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/nxnom/maggot/internal/workspace"
 )
@@ -252,9 +253,16 @@ func (s *Server) apiTool(w http.ResponseWriter, r *http.Request) error {
 	}
 	readme, _ := os.ReadFile(filepath.Join(t.Dir, "README.md"))
 	argv, _ := runner.Argv(t.Dir, t.Manifest, nil)
+	var last *testlog.Record
+	if all, _ := testlog.Load(); all != nil {
+		if rec, found := all[t.Ref()]; found {
+			last = &rec
+		}
+	}
 	return ok(w, map[string]any{
 		"ref": t.Ref(), "toolbox": t.Toolbox.Handle, "dir": t.Dir, "manifest": t.Manifest,
 		"readme": string(readme), "direct": shellJoin(argv), "env": workspace.Env(s.store, t),
+		"last_test": last,
 	})
 }
 

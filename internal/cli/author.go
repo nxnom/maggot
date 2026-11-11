@@ -14,6 +14,7 @@ import (
 	"github.com/nxnom/maggot/internal/scaffold"
 	"github.com/nxnom/maggot/internal/search"
 	"github.com/nxnom/maggot/internal/testkit"
+	"github.com/nxnom/maggot/internal/testlog"
 	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/spf13/cobra"
 )
@@ -93,40 +94,65 @@ func (a *app) warnSimilar(id, desc string) {
 	}
 }
 
-// toolDirArg accepts a tool folder path or a tool reference.
-func (a *app) toolDirArg(arg string) (string, error) {
-	if _, err := os.Stat(filepath.Join(arg, manifest.FileName)); err == nil {
-		return filepath.Abs(arg)
+// toolDirArg accepts a tool folder path or a tool reference. ref is the
+// installed tool's reference, or "" for a folder outside the toolboxes.
+func (a *app) toolDirArg(arg string) (dir, ref string, err error) {
+	e, envErr := a.loadEnv()
+	if _, statErr := os.Stat(filepath.Join(arg, manifest.FileName)); statErr == nil {
+		dir, err = filepath.Abs(arg)
+		if err != nil || envErr != nil {
+			return dir, "", err
+		}
+		tools, _ := e.Set.Tools()
+		for _, t := range tools {
+			if t.Dir == dir {
+				return dir, t.Ref(), nil
+			}
+		}
+		return dir, "", nil
 	}
-	e, err := a.loadEnv()
-	if err != nil {
-		return "", err
+	if envErr != nil {
+		return "", "", envErr
 	}
 	t, err := e.Set.Resolve(arg)
 	if err != nil {
-		return "", fmt.Errorf("%s is not a tool folder and %w", arg, err)
+		return "", "", fmt.Errorf("%s is not a tool folder and %w", arg, err)
 	}
-	return t.Dir, nil
+	return t.Dir, t.Ref(), nil
 }
 
 func (a *app) testCmd() *cobra.Command {
-	var asJSON, verbose bool
+	var asJSON, verbose, all bool
 	var opts testOpts
 	cmd := &cobra.Command{
-		Use:   "test <tool-dir|tool>",
+		Use:   "test <tool-dir|tool> | --all",
 		Short: "Validate a tool and run its tests/cases.json",
 		Long: `Validate the manifest, check requirements, then run tests/cases.json.
 
 Cases marked "network": true run only with --network. Cases marked
 "paid": true (paid APIs, credits, GPU time) run only with --paid. Stored
-secrets are passed only to those cases, so offline cases cannot spend money.`,
-		Args: cobra.ExactArgs(1),
+secrets are passed only to those cases, so offline cases cannot spend money.
+
+Results of installed tools are saved (outside the toolbox) and shown by
+'maggot list' and 'maggot info'. Run 'maggot test --all' now and then to find
+tools that stopped working, for example after a site or program changed.`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := a.toolDirArg(args[0])
+			if all {
+				if len(args) > 0 {
+					return errors.New("use either --all or a tool, not both")
+				}
+				return a.testAll(cmd.Context(), opts, asJSON)
+			}
+			if len(args) == 0 {
+				return errors.New("name a tool or folder, or use --all")
+			}
+			dir, ref, err := a.toolDirArg(args[0])
 			if err != nil {
 				return err
 			}
 			rep := a.testTool(cmd.Context(), dir, opts)
+			a.recordTest(ref, rep)
 			if asJSON {
 				if err := writeJSON(a.stdout, rep); err != nil {
 					return err
@@ -142,8 +168,78 @@ secrets are passed only to those cases, so offline cases cannot spend money.`,
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show output of passing cases too")
+	cmd.Flags().BoolVar(&all, "all", false, "test every tool in the toolboxes")
 	opts.flags(cmd)
 	return cmd
+}
+
+// recordTest saves the result of an installed tool. Tools without tests are
+// not recorded, so they show as never tested.
+func (a *app) recordTest(ref string, rep testReport) {
+	if ref == "" || rep.manifest == nil || rep.noTests {
+		return
+	}
+	errMsg := rep.ManifestErr
+	if errMsg == "" {
+		errMsg = rep.TestsErr
+	}
+	_ = testlog.Save(ref, testlog.Record{Version: rep.manifest.Version, OK: rep.OK,
+		Passed: rep.Passed, Failed: rep.Failed, Skipped: rep.Skipped, Error: firstLine(errMsg)})
+}
+
+func (a *app) testAll(ctx context.Context, opts testOpts, asJSON bool) error {
+	e, err := a.loadEnv()
+	if err != nil {
+		return err
+	}
+	tools, _ := e.Set.Tools()
+	type row struct {
+		Ref    string     `json:"ref"`
+		Report testReport `json:"report"`
+	}
+	rows := []row{}
+	failed, untested := 0, 0
+	for _, t := range tools {
+		rep := a.testTool(ctx, t.Dir, opts)
+		a.recordTest(t.Ref(), rep)
+		rows = append(rows, row{t.Ref(), rep})
+		switch {
+		case rep.noTests:
+			untested++
+		case !rep.OK:
+			failed++
+		}
+		if asJSON {
+			continue
+		}
+		switch {
+		case rep.noTests:
+			fmt.Fprintf(a.stdout, "- %s: no tests\n", t.Ref())
+		case rep.OK:
+			skipped := ""
+			if rep.Skipped > 0 {
+				skipped = fmt.Sprintf(", %d skipped", rep.Skipped)
+			}
+			fmt.Fprintf(a.stdout, "✓ %s: %d passed%s\n", t.Ref(), rep.Passed, skipped)
+		default:
+			why := rep.ManifestErr + rep.TestsErr
+			if why == "" {
+				why = fmt.Sprintf("%d failed (run `maggot test %s` for details)", rep.Failed, t.Ref())
+			}
+			fmt.Fprintf(a.stdout, "✗ %s: %s\n", t.Ref(), firstLine(why))
+		}
+	}
+	if asJSON {
+		if err := writeJSON(a.stdout, map[string]any{"ok": failed == 0, "failed": failed, "untested": untested, "tools": rows}); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintf(a.stdout, "%d tools: %d ok, %d failed, %d without tests\n", len(tools), len(tools)-failed-untested, failed, untested)
+	}
+	if failed > 0 {
+		return &exitError{code: 1}
+	}
+	return nil
 }
 
 type testOpts struct{ network, paid bool }
@@ -165,6 +261,7 @@ type testReport struct {
 	Skipped      int              `json:"skipped"`
 
 	manifest *manifest.Manifest
+	noTests  bool
 }
 
 func (a *app) testTool(ctx context.Context, dir string, opts testOpts) testReport {
@@ -190,6 +287,7 @@ func (a *app) testTool(ctx context.Context, dir string, opts testOpts) testRepor
 	if err != nil {
 		rep.TestsErr = err.Error()
 		if errors.Is(err, testkit.ErrNoTests) {
+			rep.noTests = true
 			rep.TestsErr += " (every tool should have tests; see `maggot guide`)"
 		}
 		return rep

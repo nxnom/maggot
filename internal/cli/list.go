@@ -6,22 +6,25 @@ import (
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/nxnom/maggot/internal/manifest"
 	"github.com/nxnom/maggot/internal/runner"
+	"github.com/nxnom/maggot/internal/testlog"
 	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/spf13/cobra"
 )
 
 type toolSummary struct {
-	Ref         string   `json:"ref"`
-	ID          string   `json:"id"`
-	Version     string   `json:"version"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Categories  []string `json:"categories"`
-	Toolbox     string   `json:"toolbox"`
-	Dir         string   `json:"dir"`
+	LastTest    *testlog.Record `json:"last_test"`
+	Ref         string          `json:"ref"`
+	ID          string          `json:"id"`
+	Version     string          `json:"version"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Categories  []string        `json:"categories"`
+	Toolbox     string          `json:"toolbox"`
+	Dir         string          `json:"dir"`
 }
 
 func summarize(t *toolbox.Tool) toolSummary {
@@ -48,12 +51,17 @@ func (a *app) listCmd() *cobra.Command {
 				return err
 			}
 			tools, _ := e.Set.Tools()
+			tested, _ := testlog.Load()
 			rows := []toolSummary{}
 			for _, t := range tools {
 				if category != "" && !hasCategory(t.Manifest, category) {
 					continue
 				}
-				rows = append(rows, summarize(t))
+				r := summarize(t)
+				if rec, ok := tested[t.Ref()]; ok {
+					r.LastTest = &rec
+				}
+				rows = append(rows, r)
 			}
 			problems := e.AllProblems()
 			if asJSON {
@@ -72,9 +80,10 @@ func (a *app) listCmd() *cobra.Command {
 				return nil
 			}
 			w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "TOOL\tVERSION\tDESCRIPTION")
+			fmt.Fprintln(w, "TOOL\tVERSION\tTESTED\tDESCRIPTION")
+			now := time.Now()
 			for _, r := range rows {
-				fmt.Fprintf(w, "%s\t%s\t%s\n", r.Ref, r.Version, r.Description)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, r.Version, testlog.Label(r.LastTest, r.Version, now), r.Description)
 			}
 			return w.Flush()
 		},
@@ -116,15 +125,22 @@ func (a *app) infoCmd() *cobra.Command {
 			if b, err := os.ReadFile(filepath.Join(t.Dir, "README.md")); err == nil {
 				readme = string(b)
 			}
+			var last *testlog.Record
+			if tested, _ := testlog.Load(); tested != nil {
+				if rec, ok := tested[t.Ref()]; ok {
+					last = &rec
+				}
+			}
 			if asJSON {
 				return writeJSON(a.stdout, map[string]any{
 					"ref": t.Ref(), "toolbox": t.Toolbox.Handle, "dir": t.Dir,
-					"direct_command": direct, "manifest": t.Manifest, "readme": readme,
+					"direct_command": direct, "manifest": t.Manifest, "readme": readme, "last_test": last,
 				})
 			}
 			m := t.Manifest
 			fmt.Fprintf(a.stdout, "%s %s — %s\n%s\n\n", t.Ref(), m.Version, m.Name, m.Description)
 			fmt.Fprintf(a.stdout, "dir:     %s\n", t.Dir)
+			fmt.Fprintf(a.stdout, "tested:  %s\n", testedLine(last, m.Version))
 			fmt.Fprintf(a.stdout, "run:     maggot run %s -- <args>\n", t.Ref())
 			fmt.Fprintf(a.stdout, "direct:  %s <args>\n", strings.Join(quoteAll(direct), " "))
 			if len(m.Requires) > 0 {
@@ -189,6 +205,22 @@ func quoteAll(args []string) []string {
 		out[i] = s
 	}
 	return out
+}
+
+func testedLine(r *testlog.Record, version string) string {
+	switch {
+	case r == nil:
+		return "never (run `maggot test <tool>`)"
+	case r.Version != version:
+		return fmt.Sprintf("only an older version (%s) was tested", r.Version)
+	case r.OK:
+		return fmt.Sprintf("passed %s ago (%d passed, %d skipped)", testlog.Age(time.Since(r.At)), r.Passed, r.Skipped)
+	}
+	why := r.Error
+	if why == "" {
+		why = fmt.Sprintf("%d failed", r.Failed)
+	}
+	return fmt.Sprintf("FAILED %s ago: %s", testlog.Age(time.Since(r.At)), why)
 }
 
 // argSummary describes how an input becomes argv, for `maggot info`.

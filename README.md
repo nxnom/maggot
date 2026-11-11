@@ -54,7 +54,7 @@ maggot run text-upper -- --upper --out out notes.txt
 | `doctor [tool]` | check required binaries, versions and env vars; `--install` asks before installing |
 | `run <tool> -- <args>` | run a tool in the current folder; `--inputs '{json}'` builds args from the manifest |
 | `new <id> --lang python\|sh\|deno` | scaffold a working tool with tests |
-| `test <dir\|tool>` | validate the manifest and run `tests/cases.json` |
+| `test <dir\|tool>`, `test --all` | validate and run `tests/cases.json`; network and paid cases only run with `--network` / `--paid`. Results show in `list`, `info` and the UI |
 | `import <file\|dir>`, `export <tool>`, `pack <dir>`, `remove <tool>` | share tools as `.maggot` archives (zip files) |
 | `secret set/rm/list` | store secret env values in the OS keychain, outside the toolbox |
 | `config [edit\|path\|show\|validate]` | maggot's own settings |

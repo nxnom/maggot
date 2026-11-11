@@ -29,6 +29,9 @@ folder is (`maggot toolbox add <path>`) or create one (`maggot toolbox init <pat
 
 1. `maggot search <words describing the task> --json` (also `maggot list --json`).
 2. `maggot info <tool> --json` — read the manifest, README, inputs and examples.
+   `last_test` shows whether the tool still works. If it failed, or only an
+   older version was tested, run `maggot test <tool>` first and fix the tool
+   if it is broken.
 3. `maggot doctor <tool> --json` — if binaries are missing, show the user the
    install command from the output. Only run `maggot doctor <tool> --install --yes`
    after the user agrees to install software.
@@ -57,8 +60,12 @@ a second similar tool.
 3. Write the program (none for bin). Fill `tool.json`: clear `description`,
    `tags` with search synonyms, `requires` with install hints, `inputs` for the
    options people use (plus an `args` input for the rest), `outputs`.
-4. Write `tests/cases.json` with real fixtures, including a failure case.
-   Run `maggot test <dir>` until every case passes.
+4. Write `tests/cases.json` with small local fixtures, including a failure
+   case, and `expect.checks` that verify the output content (e.g. ffprobe).
+   Tests must be free and offline: mark cases that need the internet with
+   `"network": true` and cases that cost money (paid APIs, image/video
+   generation, LLM calls) with `"paid": true`; both are skipped unless the user
+   asks. Run `maggot test <dir>` until every case passes.
 5. Ask the user, then `maggot import <dir> --yes`. For an update, bump
    `version` first. Then use it with `maggot run`.
 

@@ -10,6 +10,7 @@ import (
 func isolate(t *testing.T) string {
 	t.Helper()
 	t.Setenv("MAGGOT_CONFIG_DIR", t.TempDir())
+	t.Setenv("MAGGOT_DATA_DIR", t.TempDir())
 	t.Setenv("MAGGOT_TOOLBOX", "")
 	t.Chdir(t.TempDir())
 	return t.TempDir()
