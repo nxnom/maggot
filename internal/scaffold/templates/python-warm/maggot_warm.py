@@ -31,6 +31,7 @@ import json
 import os
 import socket
 import sys
+import threading
 import time
 import traceback
 
@@ -107,11 +108,17 @@ class _Stream(io.TextIOBase):
 
     def write(self, s):
         if s:
-            try:
-                self.conn.sendall((json.dumps({self.key: s}) + "\n").encode())
-            except OSError:
-                pass  # client went away; finish the job anyway
+            _send(self.conn, {self.key: s})  # client gone: finish the job anyway
         return len(s)
+
+
+def _send(conn, msg):
+    """Send one JSON line. A client that went away is not an error."""
+    try:
+        conn.sendall((json.dumps(msg) + "\n").encode())
+        return True
+    except OSError:
+        return False
 
 
 def serve(load, handle):
@@ -129,41 +136,55 @@ def serve(load, handle):
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     srv.bind(path)
     os.chmod(path, 0o600)
-    srv.listen(8)
+    srv.listen(128)
     srv.settimeout(1.0)
-    last = time.monotonic()
-    jobs = 0
+
+    state = {"last": time.monotonic(), "jobs": 0, "busy": False}
+    job_lock = threading.Lock()  # jobs run one at a time
+
+    def idle_left():
+        if state["busy"] or job_lock.locked():
+            return idle
+        return max(0.0, idle - (time.monotonic() - state["last"]))
+
+    def client(conn):
+        # Every connection gets its own thread, so a status check is answered
+        # at once, even while a long job runs. Nothing a client does (hanging
+        # up, sending junk) may stop the server.
+        try:
+            with conn:
+                conn.settimeout(None)
+                req = json.loads(conn.makefile("rb").readline() or b"{}")
+                if req.get("type") == "status":
+                    _send(conn, {"ok": True, "idle_left": round(idle_left()), "jobs": state["jobs"], "busy": state["busy"]})
+                elif req.get("type") == "run":
+                    with job_lock:
+                        state["busy"] = True
+                        state["jobs"] += 1
+                        try:
+                            code = _run_job(conn, req, handle, model)
+                        finally:
+                            state["busy"] = False
+                            state["last"] = time.monotonic()
+                    _send(conn, {"exit": code})
+        except (OSError, ValueError):
+            pass
+
     try:
-        while time.monotonic() - last < idle:
+        while idle_left() > 0:
             try:
                 conn, _ = srv.accept()
             except socket.timeout:
                 continue
-            with conn:
-                conn.settimeout(None)
-                line = conn.makefile("rb").readline()
-                try:
-                    req = json.loads(line)
-                except ValueError:
-                    continue
-                if req.get("type") == "status":
-                    left = max(0.0, idle - (time.monotonic() - last))
-                    conn.sendall((json.dumps({"ok": True, "idle_left": round(left), "jobs": jobs, "busy": False}) + "\n").encode())
-                    continue
-                if req.get("type") != "run":
-                    continue
-                jobs += 1
-                code = _run_job(conn, req, handle, model)
-                try:
-                    conn.sendall((json.dumps({"exit": code}) + "\n").encode())
-                except OSError:
-                    pass
-                last = time.monotonic()
+            except OSError:
+                time.sleep(0.1)
+                continue
+            threading.Thread(target=client, args=(conn,), daemon=True).start()
     finally:
         srv.close()
         with contextlib.suppress(OSError):
             os.unlink(path)
-    print(f"warm: idle for {idle:.0f}s, stopping after {jobs} job(s)", flush=True)
+    print(f"warm: idle for {idle:.0f}s, stopping after {state['jobs']} job(s)", flush=True)
     return 0
 
 

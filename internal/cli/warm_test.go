@@ -2,11 +2,13 @@ package cli
 
 import (
 	"encoding/json"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nxnom/maggot/internal/warm"
 )
@@ -86,5 +88,72 @@ func TestWarmNeedsSupport(t *testing.T) {
 	addTool(t, tb, "hello", helloManifest, helloScript)
 	if code, _, e := run(t, "warm", "hello"); code == 0 || !strings.Contains(e, "cannot stay warm") {
 		t.Fatalf("hello: %s", e)
+	}
+}
+
+// TestWarmSurvivesBadClients is the regression test for a warm process that
+// crashed when a status check hung up before reading the answer.
+func TestWarmSurvivesBadClients(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not installed")
+	}
+	helper, err := os.ReadFile("../scaffold/templates/python-warm/maggot_warm.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	isolate(t)
+	tb := newToolbox(t, "main")
+	dir := filepath.Join(tb, "tools", "sleepy")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "maggot_warm.py"), helper, 0o644)
+	os.WriteFile(filepath.Join(dir, "run.py"), []byte(`import sys, time, maggot_warm
+def load(): return {}
+def handle(argv, state):
+    if argv[:1] == ["sleep"]:
+        time.sleep(float(argv[1]))
+    print("done")
+    return 0
+sys.exit(maggot_warm.main(load, handle))
+`), 0o755)
+	os.WriteFile(filepath.Join(dir, "tool.json"), []byte(`{"schema":1,"id":"sleepy","version":"1.0.0","name":"S","description":"d",
+	  "entry":{"path":"run.py","interpreter":["python3"]},"warm":{"args":["--serve"]}}`), 0o644)
+	t.Cleanup(func() { warm.Stop("sleepy") })
+
+	if code, _, e := run(t, "warm", "sleepy", "--for", "2m"); code != 0 {
+		t.Fatal(e)
+	}
+	sock, _ := warm.SocketPath("sleepy")
+	// Clients that hang up without reading the answer.
+	for i := 0; i < 20; i++ {
+		c, err := net.Dial("unix", sock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Write([]byte(`{"type":"status"}` + "\n"))
+		c.Close()
+	}
+	// Junk does not hurt either.
+	if c, err := net.Dial("unix", sock); err == nil {
+		c.Write([]byte("not json\n"))
+		c.Close()
+	}
+	// A long job; status during it must answer at once and say busy.
+	done := make(chan string)
+	go func() {
+		_, out, _ := run(t, "run", "sleepy", "--", "sleep", "2")
+		done <- out
+	}()
+	time.Sleep(700 * time.Millisecond)
+	start := time.Now()
+	st, _ := warm.Get("sleepy")
+	if st == nil || !st.Running || !st.Busy || time.Since(start) > time.Second {
+		t.Fatalf("status during job: %+v after %v", st, time.Since(start))
+	}
+	if out := <-done; out != "done\n" {
+		t.Fatalf("job output %q", out)
+	}
+	st, _ = warm.Get("sleepy")
+	if st == nil || !st.Running || st.Busy || st.Jobs != 1 {
+		t.Fatalf("after job: %+v", st)
 	}
 }

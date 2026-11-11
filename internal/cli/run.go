@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/nxnom/maggot/internal/runner"
 	"github.com/nxnom/maggot/internal/toolbox"
@@ -86,6 +87,7 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 				return err
 			}
 			extra = append(extra, warm.Env(t)...) // reach a warm process if one runs
+			a.waitForWarm(t)
 			c, err := runner.Command(t.Dir, t.Manifest, toolArgs, runner.Options{ExtraEnv: extra, EventsPath: events})
 			if err != nil {
 				return err
@@ -147,6 +149,17 @@ func (a *app) preflight(t *toolbox.Tool) error {
 			t.Ref(), strings.Join(missing, ", "), t.Ref())
 	}
 	return nil
+}
+
+// waitForWarm waits while the tool is still loading into memory, so this run
+// uses the warm process instead of loading a second copy.
+func (a *app) waitForWarm(t *toolbox.Tool) {
+	if t.Manifest.Warm == nil {
+		return
+	}
+	warm.WaitReady(t.Manifest.ID, 10*time.Minute, func() {
+		fmt.Fprintf(a.stderr, "waiting for %s to finish loading into memory…\n", t.Ref())
+	})
 }
 
 // wait runs the child and returns its exit code. Ctrl-C reaches the child

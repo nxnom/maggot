@@ -41,6 +41,12 @@ func (s *Server) apiStartRun(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	env = append(env, warm.Env(t)...)
+	if t.Manifest.Warm != nil {
+		if st, _ := warm.Get(t.Manifest.ID); st.Loading() {
+			return &httpError{code: http.StatusConflict,
+				msg: "the tool is still loading into memory; run it when it shows Warm (a run now would load a second copy)"}
+		}
+	}
 	if req.OutDir != "" && !filepath.IsAbs(config.ExpandHome(req.OutDir)) {
 		return errors.New("choose an output folder (absolute path)")
 	}

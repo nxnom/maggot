@@ -440,7 +440,7 @@ async function toolPage(spec) {
       loadHistory(meta.id);
     } catch (err) {
       toast(err.message, true);
-      if (err.status === 409) skip.hidden = false;
+      if (err.status === 409 && err.data.missing) skip.hidden = false;
     } finally { runBtn.disabled = false; }
   });
 

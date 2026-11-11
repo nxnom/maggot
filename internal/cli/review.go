@@ -45,6 +45,7 @@ func (a *app) runReview(t *toolbox.Tool, args []string, values map[string]any) e
 		return err
 	}
 	env = append(env, warm.Env(t)...)
+	a.waitForWarm(t)
 	cwd, _ := os.Getwd()
 	opts := ui.StartOptions{ExtraEnv: env, Cwd: cwd, Review: true, Origin: "cli"}
 	if values != nil {

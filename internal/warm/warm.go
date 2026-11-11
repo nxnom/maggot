@@ -203,6 +203,30 @@ func Get(id string) (*Status, error) {
 	return st, nil
 }
 
+// Loading reports whether the tool's warm process is started but not ready.
+func (s *Status) Loading() bool { return s != nil && !s.Running }
+
+// WaitReady waits while the tool's warm process is still loading, so a run
+// uses it instead of loading a second copy. It returns the status (nil when
+// the tool is not warm) once it is ready, gone, or max has passed.
+func WaitReady(id string, max time.Duration, onWait func()) *Status {
+	st, _ := Get(id)
+	if !st.Loading() {
+		return st
+	}
+	if onWait != nil {
+		onWait()
+	}
+	deadline := time.Now().Add(max)
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		if st, _ = Get(id); !st.Loading() {
+			return st
+		}
+	}
+	return st
+}
+
 // List returns every warm tool.
 func List() []Status {
 	d, err := dir()
@@ -243,12 +267,12 @@ func Stop(id string) error {
 }
 
 func query(sock string) (*Status, error) {
-	conn, err := net.DialTimeout("unix", sock, time.Second)
+	conn, err := net.DialTimeout("unix", sock, 2*time.Second)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(2 * time.Second))
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Write([]byte(`{"type":"status"}` + "\n")); err != nil {
 		return nil, err
 	}
