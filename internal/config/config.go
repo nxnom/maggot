@@ -3,6 +3,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 )
 
 const fileName = "config.json"
@@ -24,7 +26,7 @@ type ToolboxRef struct {
 
 type Config struct {
 	Toolboxes []ToolboxRef `json:"toolboxes"`
-	Default   string       `json:"default,omitempty"`
+	Default   string       `json:"default_toolbox,omitempty"`
 
 	path string
 }
@@ -71,10 +73,63 @@ func LoadFile(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(data, c); err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(c); err != nil {
+		return nil, fmt.Errorf("%s: %w (fix it with `maggot config`)", path, err)
+	}
+	for i := range c.Toolboxes {
+		c.Toolboxes[i].Path = ExpandHome(c.Toolboxes[i].Path)
 	}
 	return c, nil
+}
+
+// ExpandHome turns a leading "~" into the home directory.
+func ExpandHome(p string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") && !strings.HasPrefix(p, `~\`) {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	return filepath.Join(home, p[1:])
+}
+
+// Problems checks the config for mistakes a person may make when editing it
+// by hand. Missing toolbox folders are reported too.
+func (c *Config) Problems() []string {
+	var out []string
+	names := map[string]bool{}
+	paths := map[string]bool{}
+	for i, t := range c.Toolboxes {
+		f := fmt.Sprintf("toolboxes[%d]", i)
+		if !ValidName(t.Name) {
+			out = append(out, fmt.Sprintf("%s.name: invalid %q (use lowercase letters, digits, - or _)", f, t.Name))
+		}
+		if names[t.Name] {
+			out = append(out, fmt.Sprintf("%s.name: duplicate %q", f, t.Name))
+		}
+		names[t.Name] = true
+		switch {
+		case t.Path == "":
+			out = append(out, f+".path: is required")
+		case !filepath.IsAbs(t.Path):
+			out = append(out, fmt.Sprintf("%s.path: must be absolute or start with ~ (got %q)", f, t.Path))
+		default:
+			if paths[t.Path] {
+				out = append(out, fmt.Sprintf("%s.path: duplicate %q", f, t.Path))
+			}
+			paths[t.Path] = true
+			if _, err := os.Stat(filepath.Join(t.Path, "toolbox.json")); err != nil {
+				out = append(out, fmt.Sprintf("%s.path: %s has no toolbox.json", f, t.Path))
+			}
+		}
+	}
+	if c.Default != "" && !names[c.Default] {
+		out = append(out, fmt.Sprintf("default_toolbox: %q is not a registered toolbox", c.Default))
+	}
+	return out
 }
 
 // Path is where the config is saved.

@@ -1,7 +1,9 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -69,5 +71,44 @@ func TestAddRemoveDefaultRoundTrip(t *testing.T) {
 	}
 	if err := c2.Remove("team"); err == nil {
 		t.Fatal("removing twice should fail")
+	}
+}
+
+func TestLoadStrictAndHome(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	home, _ := os.UserHomeDir()
+
+	os.WriteFile(path, []byte(`{"toolboxes":[{"name":"p","path":"~/tb"}],"default_toolbox":"p"}`), 0o644)
+	c, err := LoadFile(path)
+	if err != nil || c.Toolboxes[0].Path != filepath.Join(home, "tb") {
+		t.Fatalf("home expansion: %+v %v", c, err)
+	}
+	os.WriteFile(path, []byte(`{"default":"p"}`), 0o644)
+	if _, err := LoadFile(path); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("strict: %v", err)
+	}
+}
+
+func TestProblems(t *testing.T) {
+	good := t.TempDir()
+	os.WriteFile(filepath.Join(good, "toolbox.json"), []byte(`{"schema":1}`), 0o644)
+	c := &Config{
+		Toolboxes: []ToolboxRef{
+			{Name: "ok", Path: good},
+			{Name: "ok", Path: good},
+			{Name: "Bad", Path: "relative/path"},
+			{Name: "gone", Path: filepath.Join(good, "missing")},
+		},
+		Default: "nope",
+	}
+	got := strings.Join(c.Problems(), "\n")
+	for _, want := range []string{"duplicate \"ok\"", "duplicate \"" + good, "invalid \"Bad\"", "must be absolute", "no toolbox.json", "default_toolbox"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if p := (&Config{Toolboxes: []ToolboxRef{{Name: "ok", Path: good}}, Default: "ok"}).Problems(); len(p) != 0 {
+		t.Errorf("valid config has problems: %v", p)
 	}
 }

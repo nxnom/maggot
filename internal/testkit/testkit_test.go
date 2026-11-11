@@ -79,9 +79,9 @@ func TestLoadErrors(t *testing.T) {
 		t.Fatalf("want ErrNoTests, got %v", err)
 	}
 	for body, want := range map[string]string{
-		`{"cases":[]}`: "no cases",
+		`{"cases":[]}`:            "no cases",
 		`{"cases":[{"args":[]}]}`: "needs a name",
-		`{"cases":[{"name":"x","args":[],"inputs":{}}]}`: "not both",
+		`{"cases":[{"name":"x","args":[],"inputs":{}}]}`:   "not both",
 		`{"cases":[{"name":"x","expect":{"exitcode":1}}]}`: "unknown field",
 	} {
 		dir, _ := setup(t, body)
