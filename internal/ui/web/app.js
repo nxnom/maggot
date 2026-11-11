@@ -380,8 +380,10 @@ async function toolPage(spec) {
   const form = buildForm(m.inputs || [], saved, preview);
   const formEl = h("form", { class: "form", novalidate: true },
     form.el,
-    h("div", { class: "cmdline" }, outControl, cmd, h("div", { class: "go" }, runBtn, skip,
-      h("button", { class: "btn small quiet", type: "button", onclick: () => form.set(null) }, "Reset form"))));
+    h("div", { class: "cmdline" }, outControl, cmd),
+    // sticky: Run / Reset stay at the bottom of the screen while a long form scrolls
+    h("div", { class: "go" }, runBtn, skip,
+      h("button", { class: "btn small quiet", type: "button", onclick: () => form.set(null) }, "Reset form")));
   preview();
 
   // run panel + history
