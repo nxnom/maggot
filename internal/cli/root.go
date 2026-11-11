@@ -22,6 +22,8 @@ type app struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
+
+	toolboxFlag string
 }
 
 func newRootCmd(a *app) *cobra.Command {
@@ -38,6 +40,8 @@ func newRootCmd(a *app) *cobra.Command {
 	root.SetIn(a.stdin)
 	root.SetOut(a.stdout)
 	root.SetErr(a.stderr)
+	root.PersistentFlags().StringVar(&a.toolboxFlag, "toolbox", "", "use only this toolbox (registered name or path); env: MAGGOT_TOOLBOX")
+	root.AddCommand(a.toolboxCmd(), a.listCmd(), a.infoCmd())
 	return root
 }
 
