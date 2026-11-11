@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -109,13 +110,8 @@ are coming, and stop it when done.`,
 			} else if len(ids) == 0 {
 				return errors.New("name a tool or use --all")
 			}
-			for _, ref := range ids {
-				id := ref
-				if e, err := a.loadEnv(); err == nil {
-					if t, err := e.Set.Resolve(ref); err == nil {
-						id = t.Manifest.ID
-					}
-				}
+			for _, name := range ids {
+				id := a.warmID(name)
 				if err := warm.Stop(id); err != nil {
 					return err
 				}
@@ -127,4 +123,24 @@ are coming, and stop it when done.`,
 	stop.Flags().BoolVar(&stopAll, "all", false, "stop every warm tool")
 	cmd.AddCommand(list, stop)
 	return cmd
+}
+
+// warmID turns what the user typed into a warm tool id. It accepts the name
+// `maggot warm list` shows (also for drafts, like "draft/voxcpm-tts"), the
+// plain tool id, or any reference to an installed tool.
+func (a *app) warmID(name string) string {
+	for _, s := range warm.List() {
+		if name == s.ID || name == s.Ref {
+			return s.ID
+		}
+	}
+	if e, err := a.loadEnv(); err == nil {
+		if t, err := e.Set.Resolve(name); err == nil {
+			return t.Manifest.ID
+		}
+	}
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }

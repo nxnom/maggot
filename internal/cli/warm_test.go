@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nxnom/maggot/internal/manifest"
+	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/nxnom/maggot/internal/warm"
 )
 
@@ -155,5 +157,34 @@ sys.exit(maggot_warm.main(load, handle))
 	st, _ = warm.Get("sleepy")
 	if st == nil || !st.Running || st.Busy || st.Jobs != 1 {
 		t.Fatalf("after job: %+v", st)
+	}
+}
+
+// A tool warmed as a draft is listed as "draft/<id>"; stop must accept that.
+func TestWarmStopAcceptsListedName(t *testing.T) {
+	if _, err := exec.LookPath("uv"); err != nil {
+		t.Skip("uv not installed")
+	}
+	isolate(t)
+	newToolbox(t, "main")
+	drafts := filepath.Join(os.Getenv("MAGGOT_DATA_DIR"), "drafts")
+	run(t, "new", "drafty", "--lang", "python", "--warm")
+	m, err := manifest.Load(filepath.Join(drafts, "drafty"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := &toolbox.Tool{Toolbox: &toolbox.Toolbox{Handle: "draft"}, Dir: filepath.Join(drafts, "drafty"), Manifest: m}
+	if _, err := warm.Start(draft, time.Minute, time.Minute, nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { warm.Stop("drafty") })
+	if _, out, _ := run(t, "warm", "list"); !strings.Contains(out, "draft/drafty") {
+		t.Fatalf("list: %s", out)
+	}
+	if code, out, e := run(t, "warm", "stop", "draft/drafty"); code != 0 || !strings.Contains(out, "stopped drafty") {
+		t.Fatalf("stop: %d %s %s", code, out, e)
+	}
+	if code, _, e := run(t, "warm", "stop", "drafty"); code == 0 || !strings.Contains(e, "not warm") {
+		t.Fatalf("second stop: %s", e)
 	}
 }
