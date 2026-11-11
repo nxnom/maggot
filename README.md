@@ -17,11 +17,18 @@ toolbox is the memory.
 
 ## Install
 
+From a local checkout (no download):
+
 ```sh
-go install github.com/nxnom/maggot/cmd/maggot@latest
-# or from source
-make build   # → bin/maggot
+make install          # builds with the git version and installs to $(go env GOPATH)/bin
+maggot --version
 ```
+
+`make install` uses `go env GOBIN`, or `$(go env GOPATH)/bin` (usually `~/go/bin`).
+Make sure that folder is on your PATH. Run `make install` again after pulling
+changes, then `maggot skill install` to update the agent skill.
+
+From GitHub: `go install github.com/nxnom/maggot/cmd/maggot@latest`.
 
 ## Quick start
 
