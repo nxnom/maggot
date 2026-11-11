@@ -81,12 +81,45 @@ function renderSide() {
   }
   renderList();
 
+  const drafts = state.drafts.length ? h("ul", { class: "tool-list drafts", "aria-label": "Drafts" },
+    h("li", { class: "tool-group", "aria-hidden": "true" }, "Drafts"),
+    state.drafts.map((d) => h("li", null, h("a", {
+      class: "tool-link" + (d.error ? " broken" : ""), href: "#/tool/" + encodeURIComponent(d.ref),
+      "aria-current": current === d.ref ? "page" : null, title: d.path,
+    }, h("span", { class: "name" }, d.name || d.id), h("span", { class: "desc" }, d.error ? "Invalid tool.json" : d.kind === "draft" ? d.description : d.path))))) : null;
+
   clear(side,
     h("a", { class: "wordmark", href: "#/" }, "maggot", h("small", null, state.version)),
+    drafts,
     state.toolboxes.length ? [search, tbSelect, list] : h("p", { class: "muted", style: "margin:0;flex:1" }, "No toolbox yet."),
     h("div", { class: "side-foot" },
       h("a", { class: "btn small", href: "#/toolboxes" }, "Toolboxes"),
-      state.toolboxes.length ? h("button", { class: "btn small", type: "button", onclick: importDialog }, "Import tool") : null));
+      state.toolboxes.length ? h("button", { class: "btn small", type: "button", onclick: importDialog }, "Import tool") : null,
+      h("button", { class: "btn small", type: "button", onclick: tryDialog }, "Try a tool folder…")));
+}
+
+// tryDialog opens a tool folder as a draft, without importing it.
+function tryDialog() {
+  const box = h("input", { class: "input mono", placeholder: "/path/to/tool-folder", "aria-label": "Tool folder path", spellcheck: "false" });
+  const open = async () => {
+    try {
+      const res = await post("/api/drafts", { path: box.value });
+      await loadState();
+      location.hash = "#/tool/" + encodeURIComponent(res.ref);
+    } catch (err) { toast(err.message, true); return false; }
+  };
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); open().then((keep) => { if (keep !== false) dlg.close(); }); } });
+  const dlg = openDialog({
+    title: "Try a tool folder",
+    body: h("div", null,
+      h("p", { style: "margin-top:0" }, "Paste the folder an agent gave you (the one with tool.json). You can run it here and import it when you are happy. It is not added to your toolboxes."),
+      h("div", { class: "row" }, box, h("button", { class: "btn small", type: "button", onclick: async () => {
+        const p = await pick({ mode: "dir", title: "Choose a tool folder", start: box.value || undefined });
+        if (p) box.value = p;
+      } }, "Browse…"))),
+    actions: [{ label: "Cancel", class: "quiet" }, { label: "Open", class: "green", onClick: open }],
+  });
+  box.focus();
 }
 
 // ---------- home ----------
@@ -188,7 +221,7 @@ function importDialog() {
   });
 }
 
-async function stageImport(src) {
+async function stageImport(src, draft) {
   let staged;
   try {
     if (typeof src === "string") staged = await post("/api/import", { path: src });
@@ -199,6 +232,7 @@ async function stageImport(src) {
     }
   } catch (err) { return toast(err.message, true); }
   const m = staged.preview.manifest;
+  const removeDraft = h("input", { type: "checkbox", checked: true });
   const action = { install: "Install", upgrade: "Upgrade", downgrade: "Downgrade", reinstall: "Reinstall" }[staged.preview.action];
   let committed = false;
   openDialog({
@@ -212,13 +246,15 @@ async function stageImport(src) {
         h("dt", null, "Needs"), h("dd", null, (m.requires || []).map((r) => r.bin).join(", ") || "nothing else"),
         h("dt", null, "Size"), h("dd", null, `${staged.preview.files} files, ${bytes(staged.preview.bytes)}`)),
       h("p", null, m.description),
-      h("p", { class: "notice", style: "background:var(--sunk);color:var(--ink)" }, "This tool is code that runs on this computer. Import it only if you trust where it came from.")),
+      h("p", { class: "notice", style: "background:var(--sunk);color:var(--ink)" }, "This tool is code that runs on this computer. Import it only if you trust where it came from."),
+      draft ? h("label", { class: "check" }, removeDraft, h("span", null, draft.kind === "draft" ? "Delete the draft after importing" : "Stop trying this folder after importing (the folder stays)")) : null),
     actions: [
       { label: "Cancel", class: "quiet" },
       { label: action, class: staged.needs_force ? "danger" : "green", onClick: async () => {
         try {
           const res = await post(`/api/import/${staged.token}`, { force: staged.needs_force });
           committed = true;
+          if (draft && removeDraft.checked) await del(`/api/drafts?ref=${q(draft.ref)}`).catch(() => {});
           toast(`${{ Install: "Installed", Upgrade: "Upgraded", Downgrade: "Downgraded", Reinstall: "Reinstalled" }[action]} ${m.name}.`);
           await loadState();
           location.hash = "#/tool/" + encodeURIComponent(res.ref);
@@ -253,15 +289,16 @@ async function toolPage(spec) {
   const saved = store("values:" + tool.ref);
 
   // nameplate
-  const plate = h("header", { class: "plate" },
+  const draft = tool.draft ? { ...tool.draft, ref: tool.ref } : null;
+  const plate = h("header", { class: "plate" + (draft ? " draft" : "") },
     h("h1", null, m.name),
     h("div", { class: "stamp" },
       h("span", null, "v" + m.version),
-      h("span", null, tool.ref),
+      h("span", null, draft ? "Draft" : tool.ref),
       m.categories && m.categories.length ? h("span", null, m.categories.join(", ")) : null),
     h("div", { class: "actions" },
       h("a", { class: "btn small", href: `/api/export?ref=${q(tool.ref)}` }, "Export"),
-      h("button", { class: "btn small", type: "button", onclick: async () => {
+      draft ? null : h("button", { class: "btn small", type: "button", onclick: async () => {
         if (!(await confirmDialog(`Delete ${m.name}?`, h("div", null, h("p", null, "This deletes the tool folder:"), h("p", null, h("code", null, tool.dir))), "Delete tool", true))) return;
         try { await del(`/api/tool?ref=${q(tool.ref)}`); toast(`Deleted ${m.name}.`); await loadState(); location.hash = "#/"; } catch (e) { toast(e.message, true); }
       } }, "Delete")));
@@ -372,6 +409,7 @@ async function toolPage(spec) {
 
   clear(main,
     plate,
+    draft ? draftNote(draft, m) : null,
     h("p", { class: "lede" }, m.description),
     reqs, secrets,
     h("div", { class: "work" }, formEl, h("div", { class: "stack" }, runView.el, historyPanel)),
@@ -383,6 +421,21 @@ async function toolPage(spec) {
   if (runParam) runView.show(runParam).catch(() => {});
   renderSecrets(tool, secrets);
   checkHealth(tool, reqs);
+}
+
+function draftNote(draft, m) {
+  const isDraftsFolder = draft.kind === "draft";
+  const remove = h("button", { class: "btn small quiet danger", type: "button" }, isDraftsFolder ? "Delete draft" : "Stop trying");
+  remove.addEventListener("click", async () => {
+    if (isDraftsFolder && !(await confirmDialog(`Delete the draft of ${m.name}?`,
+      h("div", null, h("p", null, "This deletes the draft folder:"), h("p", null, h("code", null, draft.path))), "Delete draft", true))) return;
+    try { await del(`/api/drafts?ref=${q(draft.ref)}`); await loadState(); location.hash = "#/"; } catch (e) { toast(e.message, true); }
+  });
+  return h("div", { class: "draft-note" },
+    h("p", null, "Not in your toolbox yet. Try it here, then import it.", h("br"), h("code", null, draft.path)),
+    h("div", { class: "row" },
+      h("button", { class: "btn green", type: "button", onclick: () => stageImport(draft.path, draft) }, "Import…"),
+      remove));
 }
 
 async function checkHealth(tool, el) {
@@ -410,7 +463,7 @@ async function checkHealth(tool, el) {
     return [chip, btn];
   });
   const missingEnv = health.env.filter((e) => e.required && !e.set && !e.secret).map((e) => h("span", { class: "req bad" }, `env ${e.name} not set`));
-  clear(el, testChip(tool), chips, missingEnv, !chips.length && !missingEnv.length ? h("span", { class: "req" }, "No requirements") : null);
+  clear(el, tool.draft ? null : testChip(tool), chips, missingEnv, !chips.length && !missingEnv.length ? h("span", { class: "req" }, "No requirements") : null);
 }
 
 // testChip shows the last `maggot test` result, so broken tools stand out.

@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nxnom/maggot/internal/config"
 	"github.com/nxnom/maggot/internal/doctor"
 	"github.com/nxnom/maggot/internal/guide"
 	"github.com/nxnom/maggot/internal/manifest"
+	"github.com/nxnom/maggot/internal/pack"
 	"github.com/nxnom/maggot/internal/scaffold"
 	"github.com/nxnom/maggot/internal/search"
 	"github.com/nxnom/maggot/internal/testkit"
@@ -18,6 +20,37 @@ import (
 	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/spf13/cobra"
 )
+
+func (a *app) draftCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "draft <tool>",
+		Short: "Copy an installed tool into the drafts folder to change it",
+		Long: `Copy an installed tool into the drafts folder. Edit and test the copy,
+let the user try it with 'maggot try', bump its version, then import it to
+replace the installed tool.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := a.loadEnv()
+			if err != nil {
+				return err
+			}
+			t, err := e.Set.Resolve(args[0])
+			if err != nil {
+				return err
+			}
+			drafts, err := config.DraftsDir()
+			if err != nil {
+				return err
+			}
+			dst := filepath.Join(drafts, t.Manifest.ID)
+			if err := pack.CopyTool(t.Dir, dst); err != nil {
+				return fmt.Errorf("%w (delete or finish the existing draft first)", err)
+			}
+			fmt.Fprintf(a.stdout, "%s\nedit it, bump \"version\" in tool.json, `maggot test %s`, then `maggot try %s`\n", dst, dst, dst)
+			return nil
+		},
+	}
+}
 
 func (a *app) guideCmd() *cobra.Command {
 	return &cobra.Command{
@@ -50,20 +83,29 @@ Pick the simplest kind that works:
   maggot new image-resize --lang python --dir /tmp/work`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if dir == "" {
+				var err error
+				if dir, err = config.DraftsDir(); err != nil {
+					return err
+				}
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					return err
+				}
+			}
 			path, err := scaffold.Create(dir, scaffold.Options{ID: args[0], Lang: lang, Name: name, Description: desc, Bin: bin})
 			if err != nil {
 				return err
 			}
 			a.warnSimilar(args[0], desc)
 			abs, _ := filepath.Abs(path)
-			fmt.Fprintf(a.stdout, "created %s\nnext: edit it, then `maggot test %s` and `maggot import %s`\n", abs, abs, abs)
+			fmt.Fprintf(a.stdout, "created %s\nnext: edit it, `maggot test %s`, then let the user try it with `maggot try %s`\n", abs, abs, abs)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&lang, "lang", "", "kind of tool: "+strings.Join(scaffold.Langs(), ", ")+" (required)")
 	cmd.Flags().StringVar(&bin, "bin", "", "program to run, for --lang bin")
 	_ = cmd.MarkFlagRequired("lang")
-	cmd.Flags().StringVar(&dir, "dir", ".", "parent folder for the new tool")
+	cmd.Flags().StringVar(&dir, "dir", "", "parent folder for the new tool (default: the maggot drafts folder)")
 	cmd.Flags().StringVar(&name, "name", "", "display name")
 	cmd.Flags().StringVar(&desc, "description", "", "one-line description")
 	return cmd

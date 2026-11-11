@@ -10,13 +10,18 @@ program must run without maggot.
    If a tool almost fits, improve it (and bump `version`) instead of adding a
    second similar tool.
 2. Pick the simplest kind (see "Choosing the kind of tool") and scaffold:
-   `maggot new <id> --lang bin|sh|python|deno [--bin <program>] --dir <scratch dir>`.
-   The template already works and passes its tests. Change it into your tool.
+   `maggot new <id> --lang bin|sh|python|deno [--bin <program>]`. It goes into
+   the maggot drafts folder (`<data dir>/drafts/<id>`; `--dir` picks another
+   lasting folder). The template already works and passes its tests. Change
+   it into your tool. To change an installed tool, `maggot draft <tool>`
+   copies it into the drafts folder.
 3. Write the program (none for `bin`), update `tool.json`, `README.md` and
    `tests/cases.json`.
 4. Test until it passes: `maggot test <dir>`.
-5. Install it: `maggot import <dir>` (the user confirms, or pass `--yes` after
-   the user approved). Bump `version` for updates.
+5. Hand it over: give the user the folder path and `maggot try <dir>`. They
+   try it in the web UI and import it from there. Import it yourself
+   (`maggot import <dir> --yes`) only when the user asks. Bump `version` for
+   updates.
 
 ## Choosing the kind of tool
 

@@ -41,13 +41,14 @@ folder is (`maggot toolbox add <path>`) or create one (`maggot toolbox init <pat
    from `maggot info` apply only with `--inputs`; with raw args, pass what
    you need yourself (entry.args are always added).
 
-If a tool almost fits, prefer improving it (new flag, bump version) over writing
-a second similar tool.
+If a tool almost fits, improve it instead of writing a second similar tool:
+`maggot draft <tool>` copies it into the drafts folder; change the copy, bump
+`version`, and continue with steps 3–5 below.
 
 ## Create a tool
 
 1. Read `maggot guide` once: it is the full manifest, run contract and test format.
-2. Pick the simplest kind and scaffold a working template in a scratch folder:
+2. Pick the simplest kind and scaffold a working template:
    - `--lang bin --bin <program>`: an installed program already does the job
      (yt-dlp, ffmpeg, magick). No code: only `tool.json` mapping inputs to the
      program's flags. Never write a script just to wrap another CLI.
@@ -55,8 +56,9 @@ a second similar tool.
    - `--lang python` (uv inline deps) or `--lang deno` (npm:/jsr:): only for
      real logic or libraries.
 
-   `maggot new <id> --lang <kind> --dir <scratch folder>`. Never depend on
-   files in the current project.
+   `maggot new <id> --lang <kind>` creates it in the maggot drafts folder (it
+   prints the path). Do not use a temporary or scratchpad folder: the user
+   tries the tool later. Never depend on files in the current project.
 3. Write the program (none for bin). Fill `tool.json`: clear `description`,
    `tags` with search synonyms, `requires` with install hints, `inputs` for the
    options people use (plus an `args` input for the rest), `outputs`.
@@ -66,8 +68,13 @@ a second similar tool.
    `"network": true` and cases that cost money (paid APIs, image/video
    generation, LLM calls) with `"paid": true`; both are skipped unless the user
    asks. Run `maggot test <dir>` until every case passes.
-5. Ask the user, then `maggot import <dir> --yes`. For an update, bump
-   `version` first. Then use it with `maggot run`.
+5. Hand it to the user. Do not import it yourself. Tell them the folder path
+   and the command to try it in the web UI:
+
+       maggot try <dir>
+
+   They run it there and import it with one click when they are happy. Only
+   if the user tells you to import it, run `maggot import <dir> --yes`.
 
 Secrets: declare them in `env` with `"secret": true`; the user stores them with
 `maggot secret set <tool> <NAME>`. Never write secrets into tool files.

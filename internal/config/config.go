@@ -92,6 +92,16 @@ func DataDir() (string, error) {
 	return filepath.Join(home, ".local", "share", "maggot"), nil
 }
 
+// DraftsDir is where `maggot new` creates tools by default: a lasting place
+// outside every toolbox, so the user can try a tool before importing it.
+func DraftsDir() (string, error) {
+	d, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "drafts"), nil
+}
+
 // Load reads the config file. A missing file gives an empty config.
 func Load() (*Config, error) {
 	dir, err := Dir()

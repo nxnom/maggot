@@ -121,3 +121,25 @@ func TestTestAllRecordsResults(t *testing.T) {
 		t.Fatalf("no args: %s", e)
 	}
 }
+
+func TestNewDefaultsToDraftsAndDraftCommand(t *testing.T) {
+	isolate(t)
+	newToolbox(t, "main")
+	drafts := filepath.Join(os.Getenv("MAGGOT_DATA_DIR"), "drafts")
+	code, out, e := run(t, "new", "fresh-tool", "--lang", "sh")
+	if code != 0 || !strings.Contains(out, filepath.Join(drafts, "fresh-tool")) || !strings.Contains(out, "maggot try") {
+		t.Fatalf("new: %s %s", out, e)
+	}
+	run(t, "import", "--yes", filepath.Join(drafts, "fresh-tool"))
+	os.RemoveAll(filepath.Join(drafts, "fresh-tool"))
+	code, out, _ = run(t, "draft", "fresh-tool")
+	if code != 0 || !strings.HasPrefix(out, filepath.Join(drafts, "fresh-tool")) {
+		t.Fatalf("draft: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(drafts, "fresh-tool", "tests", "cases.json")); err != nil {
+		t.Fatal("draft should include tests")
+	}
+	if code, _, e := run(t, "draft", "fresh-tool"); code == 0 || !strings.Contains(e, "already exists") {
+		t.Fatalf("second draft: %s", e)
+	}
+}

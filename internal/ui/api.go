@@ -72,9 +72,15 @@ func (s *Server) apiState(w http.ResponseWriter, r *http.Request) error {
 		boxes = append(boxes, tbRow{Name: p.Toolbox, Path: p.Path, Default: p.Toolbox == ws.Config.Default, Error: p.Error})
 	}
 	home, _ := os.UserHomeDir()
+	drafts := s.drafts()
+	if drafts == nil {
+		drafts = []draftInfo{}
+	}
+	draftsDir, _ := config.DraftsDir()
 	return ok(w, map[string]any{
 		"version": s.Version, "config_path": ws.Config.Path(), "data_dir": s.data, "home": home,
 		"selected": s.Selector != "", "toolboxes": boxes, "tools": rows, "problems": ws.AllProblems(),
+		"drafts": drafts, "drafts_dir": draftsDir,
 	})
 }
 
@@ -239,6 +245,13 @@ func (s *Server) resolve(r *http.Request, ref string) (*workspace.Workspace, *to
 	if ref == "" {
 		ref = r.URL.Query().Get("ref")
 	}
+	if isDraftRef(ref) {
+		d, err := s.draft(ref)
+		if err != nil {
+			return nil, nil, err
+		}
+		return ws, d.tool, nil
+	}
 	t, err := ws.Set.Resolve(ref)
 	if err != nil {
 		return nil, nil, &httpError{code: http.StatusNotFound, msg: err.Error()}
@@ -253,8 +266,12 @@ func (s *Server) apiTool(w http.ResponseWriter, r *http.Request) error {
 	}
 	readme, _ := os.ReadFile(filepath.Join(t.Dir, "README.md"))
 	argv, _ := runner.Argv(t.Dir, t.Manifest, nil)
+	var draft map[string]string
+	if isDraftRef(t.Ref()) {
+		draft = map[string]string{"kind": t.Toolbox.Handle, "path": t.Dir}
+	}
 	var last *testlog.Record
-	if all, _ := testlog.Load(); all != nil {
+	if all, _ := testlog.Load(); all != nil && draft == nil {
 		if rec, found := all[t.Ref()]; found {
 			last = &rec
 		}
@@ -262,11 +279,14 @@ func (s *Server) apiTool(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]any{
 		"ref": t.Ref(), "toolbox": t.Toolbox.Handle, "dir": t.Dir, "manifest": t.Manifest,
 		"readme": string(readme), "direct": shellJoin(argv), "env": workspace.Env(s.store, t),
-		"last_test": last,
+		"last_test": last, "draft": draft,
 	})
 }
 
 func (s *Server) apiRemoveTool(w http.ResponseWriter, r *http.Request) error {
+	if isDraftRef(r.URL.Query().Get("ref")) {
+		return errors.New("use the draft's Remove button")
+	}
 	_, t, err := s.resolve(r, "")
 	if err != nil {
 		return err

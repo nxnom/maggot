@@ -52,6 +52,7 @@ type Server struct {
 	mu     sync.Mutex
 	hosts  map[string]bool
 	staged map[string]*stagedImport
+	tried  []string // folders being tried; memory only
 }
 
 type stagedImport struct {
@@ -174,6 +175,8 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/runs/{id}/stream", s.apiStream)
 	api("GET /api/runs/{id}/files/{path...}", s.apiRunFile)
 	api("POST /api/reveal", s.apiReveal)
+	api("POST /api/drafts", s.apiAddDraft)
+	api("DELETE /api/drafts", s.apiRemoveDraft)
 
 	return s.checkHost(mux)
 }

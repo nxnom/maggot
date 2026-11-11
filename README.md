@@ -36,9 +36,9 @@ From GitHub: `go install github.com/nxnom/maggot/cmd/maggot@latest`.
 maggot toolbox init ~/toolbox            # create and register a toolbox
 maggot skill install                     # SKILL.md for Claude Code and Codex
 
-maggot new text-upper --lang python --dir /tmp/work
-maggot test /tmp/work/text-upper         # validate + run tests/cases.json
-maggot import /tmp/work/text-upper       # asks first; --yes to skip
+maggot new text-upper --lang python      # → ~/.local/share/maggot/drafts/text-upper
+maggot test <that folder>                # validate + run tests/cases.json
+maggot try <that folder>                 # try it in the web UI, import from there
 
 maggot search upper case text
 maggot run text-upper -- --upper --out out notes.txt
@@ -53,7 +53,9 @@ maggot run text-upper -- --upper --out out notes.txt
 | `info <tool>` | manifest, README, and the direct command without maggot |
 | `doctor [tool]` | check required binaries, versions and env vars; `--install` asks before installing |
 | `run <tool> -- <args>` | run a tool in the current folder; `--inputs '{json}'` builds args from the manifest |
-| `new <id> --lang python\|sh\|deno` | scaffold a working tool with tests |
+| `new <id> --lang bin\|sh\|python\|deno` | scaffold a working tool with tests, in the drafts folder |
+| `draft <tool>` | copy an installed tool into the drafts folder to change it |
+| `try <folder>` | open a tool folder in the web UI to try it before importing |
 | `test <dir\|tool>`, `test --all` | validate and run `tests/cases.json`; network and paid cases only run with `--network` / `--paid`. Results show in `list`, `info` and the UI |
 | `import <file\|dir>`, `export <tool>`, `pack <dir>`, `remove <tool>` | share tools as `.maggot` archives (zip files) |
 | `secret set/rm/list` | store secret env values in the OS keychain, outside the toolbox |
@@ -81,7 +83,7 @@ The config folder is `$MAGGOT_CONFIG_DIR`, then `$XDG_CONFIG_HOME/maggot`, then
 ## Web UI
 
 ```sh
-maggot ui            # opens http://127.0.0.1:4545 in your browser
+maggot ui            # opens http://127.0.0.1:26244 in your browser
 ```
 
 - Pick a toolbox folder (or create one), then pick a tool. The form is built

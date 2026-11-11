@@ -388,6 +388,22 @@ func writeEntry(f *zip.File, target string, mode fs.FileMode, budget int64) (int
 	return n, nil
 }
 
+// CopyTool copies a tool folder to dst (which must not exist), leaving out
+// the same files as archives do.
+func CopyTool(src, dst string) error {
+	if _, err := os.Stat(dst); err == nil {
+		return fmt.Errorf("%s already exists", dst)
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	if err := copyDir(src, dst, &Preview{}); err != nil {
+		os.RemoveAll(dst)
+		return err
+	}
+	return nil
+}
+
 func copyDir(src, dst string, p *Preview) error {
 	files, err := collect(src)
 	if err != nil {

@@ -391,3 +391,86 @@ func TestAddToolboxNeedsCreate(t *testing.T) {
 	ts.do(t, "POST", "/api/toolboxes/fresh/default", nil, 200, nil)
 	ts.do(t, "DELETE", "/api/toolboxes/fresh", nil, 200, nil)
 }
+
+// writeShellTool writes a minimal shell tool into dir/<id>.
+func writeShellTool(t *testing.T, parent, id, version string) string {
+	t.Helper()
+	dir := filepath.Join(parent, id)
+	os.MkdirAll(dir, 0o755)
+	m := `{"schema":1,"id":"` + id + `","version":"` + version + `","name":"Draft ` + id + `","description":"d","entry":{"path":"run"},
+	  "inputs":[{"name":"name","type":"string","arg":{"positional":true}}]}`
+	os.WriteFile(filepath.Join(dir, "tool.json"), []byte(m), 0o644)
+	os.WriteFile(filepath.Join(dir, "run"), []byte("#!/bin/sh\necho \"draft $1\"\n"), 0o755)
+	return dir
+}
+
+func TestDrafts(t *testing.T) {
+	ts := newTestServer(t)
+	draftsDir := filepath.Join(os.Getenv("MAGGOT_DATA_DIR"), "drafts")
+	inDrafts := writeShellTool(t, draftsDir, "fresh", "0.1.0")
+	elsewhere := writeShellTool(t, t.TempDir(), "outside", "0.1.0")
+
+	// Trying a folder: it shows up as try/<id>, the drafts folder as draft/<id>.
+	var added struct{ Ref string }
+	ts.do(t, "POST", "/api/drafts", map[string]any{"path": elsewhere}, 200, &added)
+	if added.Ref != "try/outside" {
+		t.Fatalf("ref %q", added.Ref)
+	}
+	ts.do(t, "POST", "/api/drafts", map[string]any{"path": inDrafts}, 200, &added)
+	if added.Ref != "draft/fresh" {
+		t.Fatalf("drafts-folder ref %q", added.Ref)
+	}
+	ts.do(t, "POST", "/api/drafts", map[string]any{"path": t.TempDir()}, 400, nil)
+
+	var state struct {
+		Drafts []draftInfo
+		Tools  []toolSummary
+	}
+	ts.do(t, "GET", "/api/state", nil, 200, &state)
+	if len(state.Drafts) != 2 || len(state.Tools) != 1 {
+		t.Fatalf("drafts must not be mixed with tools: %+v", state)
+	}
+
+	// A draft works like a tool: info, preview, run.
+	var tool struct {
+		Draft map[string]string
+	}
+	ts.do(t, "GET", "/api/tool?ref=try/outside", nil, 200, &tool)
+	if tool.Draft["kind"] != "try" || tool.Draft["path"] != elsewhere {
+		t.Fatalf("draft info: %+v", tool)
+	}
+	var meta RunMeta
+	ts.do(t, "POST", "/api/runs", map[string]any{"ref": "draft/fresh", "values": map[string]any{"name": "x"}}, 200, &meta)
+	r, _ := ts.s.runs.Active(meta.ID)
+	if r != nil {
+		<-r.Done()
+	}
+	if got, _ := ts.s.runs.Get(meta.ID); got.Status != StatusSucceeded {
+		t.Fatalf("draft run: %+v", got)
+	}
+
+	// Edits show up at once (the manifest is re-read).
+	os.WriteFile(filepath.Join(elsewhere, "tool.json"), []byte(`{"schema":1,"id":"outside","version":"0.2.0","name":"Renamed","description":"d","entry":{"path":"run"}}`), 0o644)
+	var again struct{ Manifest struct{ Name, Version string } }
+	ts.do(t, "GET", "/api/tool?ref=try/outside", nil, 200, &again)
+	if again.Manifest.Name != "Renamed" {
+		t.Fatalf("not re-read: %+v", again)
+	}
+
+	// Drafts cannot be deleted through the tool endpoint.
+	ts.do(t, "DELETE", "/api/tool?ref=draft/fresh", nil, 400, nil)
+	// Removing a tried folder only forgets it; the files stay.
+	ts.do(t, "DELETE", "/api/drafts?ref=try/outside", nil, 200, nil)
+	if _, err := os.Stat(elsewhere); err != nil {
+		t.Fatal("tried folder must not be deleted")
+	}
+	// Removing a draft in the drafts folder deletes it.
+	ts.do(t, "DELETE", "/api/drafts?ref=draft/fresh", nil, 200, nil)
+	if _, err := os.Stat(inDrafts); err == nil {
+		t.Fatal("draft folder should be deleted")
+	}
+	ts.do(t, "GET", "/api/state", nil, 200, &state)
+	if len(state.Drafts) != 0 {
+		t.Fatalf("drafts left: %+v", state.Drafts)
+	}
+}
