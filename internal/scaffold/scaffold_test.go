@@ -36,7 +36,7 @@ func TestTemplatesPassTheirOwnTests(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, r := range testkit.Run(context.Background(), dir, m, s, nil) {
+			for _, r := range testkit.Run(context.Background(), dir, m, s, testkit.Options{}) {
 				if !r.Passed {
 					t.Errorf("case %q failed: %v\nstdout: %s\nstderr: %s", r.Name, r.Failures, r.Stdout, r.Stderr)
 				}

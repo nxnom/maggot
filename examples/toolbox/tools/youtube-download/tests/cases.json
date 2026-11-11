@@ -10,7 +10,14 @@
       "name": "extracts mp3 audio",
       "inputs": {"urls": ["file://{tool}/tests/fixtures/sample.mp4"], "mode": "mp3", "extra": "--enable-file-urls"},
       "out": "{work}/out",
-      "expect": {"stdout_contains": ["ExtractAudio"], "files": ["out/sample.mp3"]}
+      "expect": {
+        "stdout_contains": ["ExtractAudio"],
+        "files": ["out/sample.mp3"],
+        "checks": [
+          {"run": ["ffprobe", "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", "out/sample.mp3"],
+           "stdout_contains": ["mp3"]}
+        ]
+      }
     },
     {
       "name": "raw yt-dlp args work",

@@ -111,16 +111,22 @@ func (a *app) toolDirArg(arg string) (string, error) {
 
 func (a *app) testCmd() *cobra.Command {
 	var asJSON, verbose bool
+	var opts testOpts
 	cmd := &cobra.Command{
 		Use:   "test <tool-dir|tool>",
 		Short: "Validate a tool and run its tests/cases.json",
-		Args:  cobra.ExactArgs(1),
+		Long: `Validate the manifest, check requirements, then run tests/cases.json.
+
+Cases marked "network": true run only with --network. Cases marked
+"paid": true (paid APIs, credits, GPU time) run only with --paid. Stored
+secrets are passed only to those cases, so offline cases cannot spend money.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir, err := a.toolDirArg(args[0])
 			if err != nil {
 				return err
 			}
-			rep := a.testTool(cmd.Context(), dir)
+			rep := a.testTool(cmd.Context(), dir, opts)
 			if asJSON {
 				if err := writeJSON(a.stdout, rep); err != nil {
 					return err
@@ -136,7 +142,15 @@ func (a *app) testCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "show output of passing cases too")
+	opts.flags(cmd)
 	return cmd
+}
+
+type testOpts struct{ network, paid bool }
+
+func (o *testOpts) flags(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&o.network, "network", false, "also run cases that need the internet")
+	cmd.Flags().BoolVar(&o.paid, "paid", false, "also run cases that call paid APIs (may cost money)")
 }
 
 type testReport struct {
@@ -146,15 +160,21 @@ type testReport struct {
 	Requirements []doctor.Result  `json:"requirements"`
 	TestsErr     string           `json:"tests_error,omitempty"`
 	Cases        []testkit.Result `json:"cases"`
+	Passed       int              `json:"passed"`
+	Failed       int              `json:"failed"`
+	Skipped      int              `json:"skipped"`
+
+	manifest *manifest.Manifest
 }
 
-func (a *app) testTool(ctx context.Context, dir string) testReport {
+func (a *app) testTool(ctx context.Context, dir string, opts testOpts) testReport {
 	rep := testReport{Dir: dir, Requirements: []doctor.Result{}, Cases: []testkit.Result{}}
 	m, err := manifest.Load(dir)
 	if err != nil {
 		rep.ManifestErr = err.Error()
 		return rep
 	}
+	rep.manifest = m
 	if base := filepath.Base(dir); base != m.ID {
 		rep.ManifestErr = fmt.Sprintf("folder name %q must match tool id %q", base, m.ID)
 		return rep
@@ -174,17 +194,17 @@ func (a *app) testTool(ctx context.Context, dir string) testReport {
 		}
 		return rep
 	}
-	t := &toolbox.Tool{Dir: dir, Manifest: m, Toolbox: &toolbox.Toolbox{}}
-	env, err := a.secretEnv(t)
-	if err != nil {
-		rep.TestsErr = err.Error()
-		return rep
+	run := testkit.Options{Network: opts.network, Paid: opts.paid}
+	if opts.network || opts.paid {
+		t := &toolbox.Tool{Dir: dir, Manifest: m, Toolbox: &toolbox.Toolbox{}}
+		if run.SecretEnv, err = a.secretEnv(t); err != nil {
+			rep.TestsErr = err.Error()
+			return rep
+		}
 	}
-	rep.Cases = testkit.Run(ctx, dir, m, suite, env)
-	rep.OK = true
-	for _, c := range rep.Cases {
-		rep.OK = rep.OK && c.Passed
-	}
+	rep.Cases = testkit.Run(ctx, dir, m, suite, run)
+	rep.Passed, rep.Failed, rep.Skipped = testkit.Summary(rep.Cases)
+	rep.OK = rep.Failed == 0
 	return rep
 }
 
@@ -206,12 +226,18 @@ func (a *app) printTestReport(rep testReport, verbose bool) {
 		fmt.Fprintf(w, "✗ tests: %s\n", rep.TestsErr)
 		return
 	}
-	passed := 0
 	for _, c := range rep.Cases {
-		if c.Passed {
-			passed++
-			fmt.Fprintf(w, "✓ %s (%.2fs)\n", c.Name, c.Duration)
-		} else {
+		switch {
+		case c.Skipped != "":
+			fmt.Fprintf(w, "- %s (skipped: %s)\n", c.Name, c.Skipped)
+			continue
+		case c.Passed:
+			tries := ""
+			if c.Attempts > 1 {
+				tries = fmt.Sprintf(", attempt %d", c.Attempts)
+			}
+			fmt.Fprintf(w, "✓ %s (%.2fs%s)\n", c.Name, c.Duration, tries)
+		default:
 			fmt.Fprintf(w, "✗ %s\n", c.Name)
 			for _, f := range c.Failures {
 				fmt.Fprintf(w, "    - %s\n", f)
@@ -227,7 +253,11 @@ func (a *app) printTestReport(rep testReport, verbose bool) {
 			}
 		}
 	}
-	fmt.Fprintf(w, "%d/%d cases passed\n", passed, len(rep.Cases))
+	line := fmt.Sprintf("%d/%d cases passed", rep.Passed, rep.Passed+rep.Failed)
+	if rep.Skipped > 0 {
+		line += fmt.Sprintf(", %d skipped", rep.Skipped)
+	}
+	fmt.Fprintln(w, line)
 }
 
 func indent(s string) string {

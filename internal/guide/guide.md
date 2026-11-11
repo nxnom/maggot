@@ -228,11 +228,31 @@ Pin dependency versions so the tool keeps working.
 - `{tool}` is the tool folder, `{work}` is the temp folder.
 - Use `args` (raw argv) or `inputs` (values turned into argv through the
   manifest, the same path the web UI uses), not both. `out` goes with `inputs`.
-- Optional: `stdin`, `env` (object), `timeout_seconds` (default 60).
+- Optional: `stdin`, `env` (object), `timeout_seconds` (default 60),
+  `retries` (0-5, reruns a failing case).
 - `expect.exit` defaults to 0. `expect.files` are relative to `{work}` and must
   be non-empty.
+- `expect.checks` check the content, not only that a file exists. Each check
+  is a command run in `{work}` after the tool; it must exit with `exit`
+  (default 0) and print `stdout_contains`:
+
+      "checks": [{"run": ["ffprobe", "-v", "error", "-show_entries", "stream=codec_name",
+                          "-of", "csv=p=0", "out/a.mp4"], "stdout_contains": ["h264"]}]
+
+### Network and paid cases
+
+Tests must be free and work offline by default. Test with local fixtures,
+`file://` URLs, or the tool's own dry-run/mock mode.
+
+- Mark a case that needs the internet with `"network": true`. It runs only
+  with `maggot test --network`.
+- Mark a case that calls a paid API or uses credits/GPU time (image or video
+  generation, LLM calls) with `"paid": true`. It runs only with
+  `maggot test --paid`. Prefer no paid case at all.
+- Stored secrets (API keys) are passed only to network and paid cases, so an
+  unmarked case cannot spend money by mistake.
 - Test failure cases too (bad input → non-zero exit and a clear stderr message).
-- Keep fixtures small. Tests must not need network access when possible.
+- Keep fixtures small.
 
 `maggot test <dir>` validates the manifest, checks requirements, then runs the
 cases. It exits 1 when anything fails.
