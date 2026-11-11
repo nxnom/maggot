@@ -74,14 +74,31 @@ func New(version, selector string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	token, err := loadToken(filepath.Join(data, "ui-token"))
+	if err != nil {
+		return nil, err
+	}
 	s := &Server{
-		Version: version, Selector: selector, Token: randomHex(16),
+		Version: version, Selector: selector, Token: token,
 		runs: NewManager(filepath.Join(data, "runs"), cfg.Keep()), data: data,
 		store: store, checker: doctor.New(), open: openPath,
 		hosts: map[string]bool{}, staged: map[string]*stagedImport{},
 	}
 	s.cleanUploads(7 * 24 * time.Hour)
 	return s, nil
+}
+
+// loadToken keeps one access token per user, so a bookmarked
+// http://127.0.0.1:<port>/ keeps working after the first visit.
+func loadToken(path string) (string, error) {
+	if b, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(b))) >= 32 {
+		return strings.TrimSpace(string(b)), nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	t := randomHex(24)
+	return t, config.WriteFileAtomic(path, []byte(t+"\n"), 0o600)
 }
 
 func randomHex(n int) string {
@@ -185,7 +202,8 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "wrong token; open the link printed by `maggot ui`", http.StatusForbidden)
 			return
 		}
-		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.Token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+		http.SetCookie(w, &http.Cookie{Name: cookieName, Value: s.Token, Path: "/", HttpOnly: true,
+			SameSite: http.SameSiteStrictMode, MaxAge: 30 * 24 * 3600})
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -313,8 +331,9 @@ func (s *Server) cleanUploads(maxAge time.Duration) {
 	}
 }
 
-// Close discards staged imports.
+// Close stops active runs and discards staged imports.
 func (s *Server) Close() {
+	s.runs.StopAll(5 * time.Second)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for k, st := range s.staged {

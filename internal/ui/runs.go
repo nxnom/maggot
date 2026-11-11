@@ -512,6 +512,28 @@ func (m *Manager) Cancel(id string) error {
 	return nil
 }
 
+// StopAll cancels every active run and waits for them (used on shutdown,
+// because runs live in their own process groups and do not get Ctrl-C).
+func (m *Manager) StopAll(timeout time.Duration) {
+	m.mu.Lock()
+	runs := make([]*Run, 0, len(m.active))
+	for _, r := range m.active {
+		runs = append(runs, r)
+	}
+	m.mu.Unlock()
+	for _, r := range runs {
+		m.Cancel(r.Meta().ID)
+	}
+	deadline := time.After(timeout)
+	for _, r := range runs {
+		select {
+		case <-r.Done():
+		case <-deadline:
+			return
+		}
+	}
+}
+
 // Delete removes a finished run folder.
 func (m *Manager) Delete(id string) error {
 	if _, ok := m.Active(id); ok {

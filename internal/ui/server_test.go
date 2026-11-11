@@ -74,7 +74,7 @@ func newTestServer(t *testing.T) *testServer {
 type cookieJar struct{ cookies []*http.Cookie }
 
 func (j *cookieJar) SetCookies(_ *url.URL, c []*http.Cookie) { j.cookies = append(j.cookies, c...) }
-func (j *cookieJar) Cookies(_ *url.URL) []*http.Cookie      { return j.cookies }
+func (j *cookieJar) Cookies(_ *url.URL) []*http.Cookie       { return j.cookies }
 
 func (ts *testServer) do(t *testing.T, method, path string, body any, want int, out any) {
 	t.Helper()
@@ -133,6 +133,24 @@ func TestAuthAndHostChecks(t *testing.T) {
 	resp, _ = ts.client.Get(ts.URL + "/")
 	if resp.StatusCode != 200 || resp.Header.Get("Content-Security-Policy") == "" {
 		t.Fatalf("index: %d", resp.StatusCode)
+	}
+}
+
+func TestTokenIsStable(t *testing.T) {
+	t.Setenv("MAGGOT_CONFIG_DIR", t.TempDir())
+	t.Setenv("MAGGOT_DATA_DIR", t.TempDir())
+	t.Setenv("MAGGOT_SECRETS", "file")
+	a, err := New("test", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := New("test", "")
+	if a.Token != b.Token || len(a.Token) < 32 {
+		t.Fatalf("token should persist: %q %q", a.Token, b.Token)
+	}
+	info, _ := os.Stat(filepath.Join(a.data, "ui-token"))
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("token file mode %v", info.Mode().Perm())
 	}
 }
 

@@ -188,3 +188,17 @@ func TestSplitLines(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestStopAll(t *testing.T) {
+	tool := makeTool(t, `{"schema":1,"id":"slow2","version":"1.0.0","name":"S","description":"d","entry":{"path":"run"}}`,
+		"#!/bin/sh\nsleep 30\n")
+	m := NewManager(t.TempDir(), 5)
+	r, err := m.Start(tool, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.StopAll(5 * time.Second)
+	if meta := r.Meta(); meta.Status != StatusCancelled {
+		t.Fatalf("status %s", meta.Status)
+	}
+}
