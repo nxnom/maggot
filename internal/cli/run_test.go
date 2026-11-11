@@ -23,8 +23,13 @@ func TestRunPassesArgsAndExitCode(t *testing.T) {
 	if code, out, _ := run(t, "run", "hello", "--", "--shout", "world"); code != 0 || out != "HELLO world\n" {
 		t.Fatalf("code=%d out=%q", code, out)
 	}
-	if code, out, _ := run(t, "run", "hello", "--shout", "x"); code != 0 || out != "HELLO x\n" {
-		t.Fatalf("interspersed: code=%d out=%q", code, out)
+	// Tool flags before "--" are rejected with a hint, never silently mixed.
+	if code, _, e := run(t, "run", "hello", "--shout", "x"); code != 1 || !strings.Contains(e, `tool flags go after "--"`) {
+		t.Fatalf("flag before --: code=%d err=%q", code, e)
+	}
+	// maggot flags after the tool name work.
+	if code, out, _ := run(t, "run", "hello", "--inputs", `{"name":"y"}`); code != 0 || out != "hello y\n" {
+		t.Fatalf("flags after tool: code=%d out=%q", code, out)
 	}
 	code, _, errOut := run(t, "run", "fail")
 	if code != 3 || !strings.Contains(errOut, "oops") || strings.Contains(errOut, "error:") {

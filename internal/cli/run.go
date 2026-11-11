@@ -19,10 +19,11 @@ func (a *app) runCmd() *cobra.Command {
 	var inputs, outDir, events string
 	var skipChecks, dryRun bool
 	cmd := &cobra.Command{
-		Use:   "run [flags] <tool> [--] [tool args...]",
+		Use:   "run <tool> [maggot flags] [-- tool args...]",
 		Short: "Run a tool (a thin wrapper; the tool also runs without maggot)",
-		Long: `Run a tool from the current directory. Everything after the tool name is
-passed to the tool unchanged, and the tool's exit code is returned.
+		Long: `Run a tool from the current directory. Everything after "--" is passed to
+the tool unchanged, and the tool's exit code is returned. Flags before "--"
+belong to maggot.
 
 Instead of raw args you can pass input values as JSON with --inputs; maggot
 turns them into argv using the manifest (the web UI uses the same path).
@@ -42,10 +43,8 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 			if err != nil {
 				return err
 			}
+			// Plain words before "--" (e.g. "maggot run hello world") also go to the tool.
 			toolArgs := args[1:]
-			if len(toolArgs) > 0 && toolArgs[0] == "--" {
-				toolArgs = toolArgs[1:]
-			}
 			if inputs != "" {
 				if len(toolArgs) > 0 {
 					return errors.New("use either --inputs or raw tool args, not both")
@@ -78,12 +77,14 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 		},
 	}
 	f := cmd.Flags()
-	f.SetInterspersed(false) // everything after <tool> belongs to the tool
 	f.StringVar(&inputs, "inputs", "", "input values as JSON, or @file.json")
 	f.StringVar(&outDir, "out", "", "output dir, passed with the manifest's outputs.dir_flag (needs --inputs)")
 	f.StringVar(&events, "events", "", "file the tool may append NDJSON events to (sets MAGGOT_EVENTS)")
 	f.BoolVar(&skipChecks, "skip-checks", false, "do not check binaries and env before starting")
 	f.BoolVar(&dryRun, "dry-run", false, "print the command instead of running it")
+	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		return fmt.Errorf("%w\n(tool flags go after \"--\": maggot run <tool> -- --flag value)", err)
+	})
 	return cmd
 }
 

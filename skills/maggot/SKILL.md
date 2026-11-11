@@ -30,8 +30,8 @@ folder is (`maggot toolbox add <path>`) or create one (`maggot toolbox init <pat
 3. `maggot doctor <tool> --json` — if binaries are missing, show the user the
    install command from the output. Only run `maggot doctor <tool> --install --yes`
    after the user agrees to install software.
-4. `maggot run <tool> -- <args>` — args go to the tool unchanged; exit code is
-   the tool's. Alternative: `maggot run <tool> --inputs '{"name": value}'`.
+4. `maggot run <tool> -- <args>` — everything after `--` goes to the tool
+   unchanged (tool flags must come after `--`); the exit code is the tool's. Alternative: `maggot run <tool> --inputs '{"name": value}'`.
    Run from the user's project folder so relative paths work.
 
 If a tool almost fits, prefer improving it (new flag, bump version) over writing
