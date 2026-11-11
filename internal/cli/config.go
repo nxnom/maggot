@@ -18,7 +18,7 @@ func (a *app) configCmd() *cobra.Command {
 		Use:   "config",
 		Short: "Open maggot's config file in your editor (same as `config edit`)",
 		Long: `maggot's own settings: the registered toolboxes and the default toolbox.
-Tool and toolbox metadata live in tool.json / toolbox.json, not here.
+Tool and toolbox metadata live in tool.json / maggot.json, not here.
 
 Location: $MAGGOT_CONFIG_DIR, $XDG_CONFIG_HOME/maggot, ~/.config/maggot
 (%AppData%\maggot on Windows). Editor: $VISUAL, $EDITOR, then vi (notepad on Windows).`,

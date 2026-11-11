@@ -23,7 +23,7 @@ func TestConfigCommands(t *testing.T) {
 		t.Fatalf("validate: %s", out)
 	}
 	os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{"toolboxes":[{"name":"x","path":"/nope"}]}`), 0o644)
-	if code, out, _ := run(t, "config", "validate"); code != 1 || !strings.Contains(out, "no toolbox.json") {
+	if code, out, _ := run(t, "config", "validate"); code != 1 || !strings.Contains(out, "no maggot.json") {
 		t.Fatalf("invalid: %s", out)
 	}
 }

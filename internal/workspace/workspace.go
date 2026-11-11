@@ -36,7 +36,7 @@ func Slug(s string) string {
 	return s
 }
 
-// HandleFor picks a toolbox handle from its toolbox.json name or folder name.
+// HandleFor picks a toolbox handle from its maggot.json name or folder name.
 func HandleFor(dir, metaName string) string {
 	if h := Slug(metaName); h != "" {
 		return h

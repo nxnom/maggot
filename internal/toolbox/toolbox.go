@@ -1,6 +1,6 @@
 // Package toolbox finds tools inside toolbox folders.
 //
-// A toolbox is any folder with a toolbox.json file and a tools/ folder.
+// A toolbox is any folder with a maggot.json file and a tools/ folder.
 // Every tools/<id>/ folder with a tool.json is one tool.
 package toolbox
 
@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	FileName = "toolbox.json"
+	FileName = "maggot.json"
 	ToolsDir = "tools"
 )
 
-// Meta is the content of toolbox.json.
+// Meta is the content of maggot.json.
 type Meta struct {
 	Schema      int    `json:"schema"`
 	Name        string `json:"name"`
@@ -53,7 +53,7 @@ type Problem struct {
 	Error   string `json:"error"`
 }
 
-// Init creates toolbox.json and tools/ in dir. It fails if toolbox.json exists.
+// Init creates maggot.json and tools/ in dir. It fails if maggot.json exists.
 func Init(dir, name string) (*Toolbox, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -81,7 +81,7 @@ func Init(dir, name string) (*Toolbox, error) {
 	return &Toolbox{Handle: name, Path: abs, Meta: meta}, nil
 }
 
-// Open reads toolbox.json in dir.
+// Open reads maggot.json in dir.
 func Open(dir, handle string) (*Toolbox, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -104,7 +104,7 @@ func Open(dir, handle string) (*Toolbox, error) {
 	return &Toolbox{Handle: handle, Path: abs, Meta: meta}, nil
 }
 
-// FindUp walks from start up to the filesystem root looking for toolbox.json.
+// FindUp walks from start up to the filesystem root looking for maggot.json.
 func FindUp(start string) (string, bool) {
 	dir, err := filepath.Abs(start)
 	if err != nil {

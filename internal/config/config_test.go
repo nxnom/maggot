@@ -92,7 +92,7 @@ func TestLoadStrictAndHome(t *testing.T) {
 
 func TestProblems(t *testing.T) {
 	good := t.TempDir()
-	os.WriteFile(filepath.Join(good, "toolbox.json"), []byte(`{"schema":1}`), 0o644)
+	os.WriteFile(filepath.Join(good, "maggot.json"), []byte(`{"schema":1}`), 0o644)
 	c := &Config{
 		Toolboxes: []ToolboxRef{
 			{Name: "ok", Path: good},
@@ -103,7 +103,7 @@ func TestProblems(t *testing.T) {
 		Default: "nope",
 	}
 	got := strings.Join(c.Problems(), "\n")
-	for _, want := range []string{"duplicate \"ok\"", "duplicate \"" + good, "invalid \"Bad\"", "must be absolute", "no toolbox.json", "default_toolbox"} {
+	for _, want := range []string{"duplicate \"ok\"", "duplicate \"" + good, "invalid \"Bad\"", "must be absolute", "no maggot.json", "default_toolbox"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}

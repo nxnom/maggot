@@ -11,7 +11,7 @@ import (
 func TestToolboxInitListRemove(t *testing.T) {
 	isolate(t)
 	dir := newToolbox(t, "personal")
-	if _, err := os.Stat(filepath.Join(dir, "toolbox.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "maggot.json")); err != nil {
 		t.Fatal(err)
 	}
 	code, out, _ := run(t, "toolbox", "list", "--json")

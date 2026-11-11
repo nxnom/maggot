@@ -23,7 +23,7 @@ func (a *app) toolboxInitCmd() *cobra.Command {
 	var noRegister bool
 	cmd := &cobra.Command{
 		Use:   "init [path]",
-		Short: "Create a new toolbox (toolbox.json + tools/) and register it",
+		Short: "Create a new toolbox (maggot.json + tools/) and register it",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := "."
@@ -72,7 +72,7 @@ func (a *app) toolboxAddCmd() *cobra.Command {
 			return a.register(tb.Path, name, makeDefault)
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "short name used in tool references (default: from toolbox.json)")
+	cmd.Flags().StringVar(&name, "name", "", "short name used in tool references (default: from maggot.json)")
 	cmd.Flags().BoolVar(&makeDefault, "default", false, "make it the default toolbox for imports and new tools")
 	return cmd
 }

@@ -70,7 +70,7 @@ registered.
 
 ```
 ~/.config/maggot/config.json      registered toolboxes, default toolbox
-<toolbox>/toolbox.json            toolbox name
+<toolbox>/maggot.json             toolbox name (marks the folder as a toolbox)
 <toolbox>/tools/<id>/tool.json    one tool: entry, requires, env, inputs, outputs
 ```
 

@@ -158,8 +158,8 @@ func (c *Config) Problems() []string {
 				out = append(out, fmt.Sprintf("%s.path: duplicate %q", f, t.Path))
 			}
 			paths[t.Path] = true
-			if _, err := os.Stat(filepath.Join(t.Path, "toolbox.json")); err != nil {
-				out = append(out, fmt.Sprintf("%s.path: %s has no toolbox.json", f, t.Path))
+			if _, err := os.Stat(filepath.Join(t.Path, "maggot.json")); err != nil {
+				out = append(out, fmt.Sprintf("%s.path: %s has no maggot.json", f, t.Path))
 			}
 		}
 	}
