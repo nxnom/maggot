@@ -59,6 +59,7 @@ maggot run text-upper -- --upper --out out notes.txt
 | `secret set/rm/list` | store secret env values in the OS keychain, outside the toolbox |
 | `config [edit\|path\|show\|validate]` | maggot's own settings |
 | `skill install/uninstall/show` | the agent skill |
+| `ui` | local web UI: a form for every tool, live runs, output previews |
 | `guide` | full tool authoring reference |
 
 Use a tool from a specific toolbox with `toolbox/id` (for example
@@ -76,6 +77,24 @@ registered.
 
 The config folder is `$MAGGOT_CONFIG_DIR`, then `$XDG_CONFIG_HOME/maggot`, then
 `~/.config/maggot` (`%AppData%\maggot` on Windows).
+
+## Web UI
+
+```sh
+maggot ui            # opens http://127.0.0.1:4545 in your browser
+```
+
+- Pick a toolbox folder (or create one), then pick a tool. The form is built
+  from the tool's `inputs`; the exact command it will run is shown under it.
+- Each run gets its own folder under the data dir (`$MAGGOT_DATA_DIR`,
+  `$XDG_DATA_HOME/maggot` or `~/.local/share/maggot`). The tool runs inside
+  `<run>/out`, which is also passed as its `outputs.dir_flag`. Output files
+  are previewed (images, video, audio) and can be opened, downloaded or shown
+  in the file manager. The newest `runs_keep` runs per tool are kept (default 30).
+- Missing requirements can be installed from the tool page (after you confirm).
+- Import `.maggot` files by dropping them on the page.
+- The server listens on 127.0.0.1 only and needs the token from the first
+  link it prints (kept in the data dir, so bookmarks keep working).
 
 ## Writing tools
 
@@ -101,10 +120,9 @@ Run `maggot guide` for the full reference. In short:
 
 ## Roadmap
 
-- v0.1 (this): toolbox discovery, search, manifest validation, run, doctor,
+- v0.1: toolbox discovery, search, manifest validation, run, doctor,
   import/export, tests, one agent skill.
-- v0.2: `maggot ui`, a local web UI with forms generated from `inputs`, and a
-  run folder per execution for outputs and logs.
+- v0.2 (this): `maggot ui`, manifest-only `bin` tools, richer inputs.
 - v0.3: release binaries and install script, better sharing workflows.
 
 ## Development
