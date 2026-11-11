@@ -76,5 +76,15 @@ If a tool almost fits, improve it instead of writing a second similar tool:
    They run it there and import it with one click when they are happy. Only
    if the user tells you to import it, run `maggot import <dir> --yes`.
 
+## Leave no copies behind
+
+- Run tools with their output flag pointing straight at where the result is
+  needed (for example the project's assets folder). Do not write to a temp
+  folder and then copy; if you had to, delete the temp folder afterwards.
+- Importing a draft from the drafts folder deletes the draft automatically.
+  If the user does not want a draft, ask, then `maggot clean drafts <id> --yes`.
+- `maggot clean` shows leftovers (web UI runs, drafts, uploads); delete them
+  only when the user agrees.
+
 Secrets: declare them in `env` with `"secret": true`; the user stores them with
 `maggot secret set <tool> <NAME>`. Never write secrets into tool files.

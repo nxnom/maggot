@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nxnom/maggot/internal/config"
 	"github.com/nxnom/maggot/internal/manifest"
 	"github.com/nxnom/maggot/internal/pack"
 	"github.com/spf13/cobra"
@@ -77,7 +78,7 @@ func (a *app) exportCmd() *cobra.Command {
 }
 
 func (a *app) importCmd() *cobra.Command {
-	var force, yes, asJSON bool
+	var force, yes, asJSON, keepDraft bool
 	cmd := &cobra.Command{
 		Use:   "import <file.maggot|file.zip|folder>...",
 		Short: "Install tools into a toolbox from archives or folders",
@@ -128,6 +129,12 @@ Installing an older or the same version over an existing tool needs --force.`,
 				if !asJSON {
 					fmt.Fprintf(a.stdout, "%s %s/%s %s\n", pastTense(s.Action), tb.Handle, s.Manifest.ID, s.Manifest.Version)
 				}
+				// A draft that is now installed would be a second copy of the tool.
+				if !keepDraft && isDraft(src) {
+					if err := os.RemoveAll(src); err == nil && !asJSON {
+						fmt.Fprintf(a.stdout, "deleted the draft %s\n", src)
+					}
+				}
 			}
 			if asJSON {
 				if results == nil {
@@ -154,9 +161,24 @@ Installing an older or the same version over an existing tool needs --force.`,
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "allow reinstalling the same version or downgrading")
+	cmd.Flags().BoolVar(&keepDraft, "keep-draft", false, "keep the folder when importing from the drafts folder")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "do not ask for confirmation")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
 	return cmd
+}
+
+// isDraft reports whether src is a tool folder directly inside the drafts folder.
+func isDraft(src string) bool {
+	drafts, err := config.DraftsDir()
+	if err != nil {
+		return false
+	}
+	abs, err := filepath.Abs(src)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(abs)
+	return err == nil && info.IsDir() && filepath.Dir(abs) == drafts
 }
 
 func pastTense(action string) string {
