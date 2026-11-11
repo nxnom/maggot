@@ -27,7 +27,8 @@ const (
 
 // BuildArgs turns input values (as decoded from JSON) into argv using each
 // input's arg mapping. Missing values use the manifest default. Order: flags
-// in manifest order, then the output dir flag, then positionals.
+// (and option/boolean args) in manifest order, then the output dir flag, then
+// free-form "args" inputs, then positionals. entry.args are added by Argv.
 func BuildArgs(m *manifest.Manifest, values map[string]any, outDir string) ([]string, error) {
 	known := map[string]bool{}
 	for _, in := range m.Inputs {
@@ -44,14 +45,14 @@ func BuildArgs(m *manifest.Manifest, values map[string]any, outDir string) ([]st
 		return nil, fmt.Errorf("unknown input(s): %s", strings.Join(unknown, ", "))
 	}
 
-	var flags, positionals []string
+	var flags, extra, positionals []string
 	var problems []string
 	for _, in := range m.Inputs {
 		val, ok := values[in.Name]
 		if !ok || val == nil {
 			val, ok = in.Default, in.Default != nil
 		}
-		if s, isStr := val.(string); ok && isStr && s == "" && in.Type != manifest.TypeString && in.Type != manifest.TypeText {
+		if s, isStr := val.(string); ok && isStr && strings.TrimSpace(s) == "" && in.Type != manifest.TypeString && in.Type != manifest.TypeText {
 			ok = false // empty form field
 		}
 		if list, isList := val.([]any); ok && isList && len(list) == 0 {
@@ -68,10 +69,28 @@ func BuildArgs(m *manifest.Manifest, values map[string]any, outDir string) ([]st
 			continue
 		}
 		strs := render(in, val)
+		if t := in.Arg.Template; t != "" {
+			for i, s := range strs {
+				strs[i] = strings.ReplaceAll(t, "{value}", s)
+			}
+		}
 		switch {
+		case in.Type == manifest.TypeArgs:
+			words, _ := manifest.SplitArgs(val.(string)) // checked by CheckValue
+			extra = append(extra, words...)
+		case in.ChoiceArgs():
+			for _, o := range in.Options {
+				if o.Value == val.(string) {
+					flags = append(flags, o.Args...)
+				}
+			}
 		case in.Type == manifest.TypeBoolean:
 			if val.(bool) {
-				flags = append(flags, in.Arg.Flag)
+				if in.Arg.Flag != "" {
+					flags = append(flags, in.Arg.Flag)
+				} else {
+					flags = append(flags, in.Arg.Args...)
+				}
 			}
 		case in.Arg.Positional:
 			positionals = append(positionals, strs...)
@@ -92,7 +111,7 @@ func BuildArgs(m *manifest.Manifest, values map[string]any, outDir string) ([]st
 		}
 		flags = append(flags, m.Outputs.DirFlag, outDir)
 	}
-	return append(flags, positionals...), nil
+	return append(append(flags, extra...), positionals...), nil
 }
 
 func render(in manifest.Input, val any) []string {
@@ -139,13 +158,15 @@ type Options struct {
 	EventsPath string
 }
 
-// Argv returns the full command line for a tool in toolDir.
+// Argv returns the full command line for a tool in toolDir:
+// [interpreter...] <entry path or bin> [entry.args...] [args...].
 func Argv(toolDir string, m *manifest.Manifest, args []string) ([]string, error) {
 	entry, err := m.EntryPath(toolDir)
 	if err != nil {
 		return nil, err
 	}
 	argv := append(append([]string{}, m.Entry.Interpreter...), entry)
+	argv = append(argv, m.Entry.Args...)
 	return append(argv, args...), nil
 }
 

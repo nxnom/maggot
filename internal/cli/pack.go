@@ -178,8 +178,12 @@ func (a *app) describeImport(s *pack.Staged, handle string) string {
 	if s.Existing != "" {
 		fmt.Fprintf(&b, " (installed: %s)", s.Existing)
 	}
+	entry := m.Entry.Path
+	if m.Entry.Bin != "" {
+		entry = m.Entry.Bin
+	}
 	fmt.Fprintf(&b, "\n  %s\n  %d files, %d bytes\n  runs: %s", m.Description, s.Files, s.Bytes,
-		strings.Join(append(append([]string{}, m.Entry.Interpreter...), m.Entry.Path), " "))
+		strings.Join(append(append(append([]string{}, m.Entry.Interpreter...), entry), m.Entry.Args...), " "))
 	if len(m.Requires) > 0 {
 		bins := make([]string, len(m.Requires))
 		for i, r := range m.Requires {

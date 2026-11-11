@@ -131,3 +131,50 @@ func TestArgvWithInterpreter(t *testing.T) {
 		t.Fatalf("got %q", argv)
 	}
 }
+
+const binManifest = `{
+  "schema": 1, "id": "yt", "version": "1.0.0", "name": "YT", "description": "d",
+  "entry": {"bin": "yt-dlp", "args": ["--newline", "--no-playlist"]},
+  "inputs": [
+    {"name": "urls", "type": "strings", "required": true, "arg": {"positional": true}},
+    {"name": "mode", "type": "enum", "default": "video", "options": [
+      {"value": "video", "args": []},
+      {"value": "mp3", "args": ["-x", "--audio-format", "mp3"]}
+    ]},
+    {"name": "max_height", "type": "enum", "options": ["1080", "720"], "arg": {"flag": "-S", "template": "res:{value}"}},
+    {"name": "playlist", "type": "boolean", "arg": {"flag": "--yes-playlist"}},
+    {"name": "subs", "type": "boolean", "arg": {"args": ["--write-subs", "--embed-subs"]}},
+    {"name": "extra", "type": "args"}
+  ],
+  "outputs": {"kind": "files", "dir_flag": "-P"}
+}`
+
+func TestBuildArgsBinTool(t *testing.T) {
+	m, err := manifest.Parse([]byte(binManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	args, err := BuildArgs(m, values(t, `{
+	  "urls": ["https://a", "https://b"], "mode": "mp3", "max_height": "720",
+	  "playlist": true, "subs": true, "extra": "--limit-rate 2M -o '%(title)s x.%(ext)s'"}`), "/out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"-x", "--audio-format", "mp3", "-S", "res:720", "--yes-playlist", "--write-subs", "--embed-subs",
+		"-P", "/out", "--limit-rate", "2M", "-o", "%(title)s x.%(ext)s", "https://a", "https://b"}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("got  %q\nwant %q", args, want)
+	}
+	// Defaults: mode video emits nothing; blank extra args are ignored.
+	args, _ = BuildArgs(m, values(t, `{"urls": ["u"], "extra": "  "}`), "")
+	if !reflect.DeepEqual(args, []string{"u"}) {
+		t.Fatalf("defaults: %q", args)
+	}
+	if _, err := BuildArgs(m, values(t, `{"urls": ["u"], "extra": "'open"}`), ""); err == nil {
+		t.Fatal("bad extra args should fail")
+	}
+	argv, _ := Argv("/tools/yt", m, []string{"u"})
+	if !reflect.DeepEqual(argv, []string{"yt-dlp", "--newline", "--no-playlist", "u"}) {
+		t.Fatalf("argv: %q", argv)
+	}
+}

@@ -40,12 +40,20 @@ type Manifest struct {
 	Examples []string      `json:"examples,omitempty"`
 }
 
-// Entry is the program to start. Path is relative to the tool folder.
-// When Interpreter is set, maggot runs: interpreter... <abs path> args...
-// Otherwise Path must be an executable file (for example a script with a shebang).
+// Entry is the program to start. Use exactly one of Path or Bin.
+//
+// Path is a file in the tool folder. With Interpreter, maggot runs
+// "interpreter... <abs path> args..."; otherwise Path must be executable.
+//
+// Bin is a program on PATH (for example "yt-dlp"). The tool folder then holds
+// only the manifest, README and tests: a manifest-only tool.
+//
+// Args are fixed arguments placed before the user's arguments.
 type Entry struct {
-	Path        string   `json:"path"`
+	Path        string   `json:"path,omitempty"`
 	Interpreter []string `json:"interpreter,omitempty"`
+	Bin         string   `json:"bin,omitempty"`
+	Args        []string `json:"args,omitempty"`
 }
 
 // Requirement is an external binary the tool needs on PATH.
@@ -80,12 +88,20 @@ const (
 	TypeFile      InputType = "file"
 	TypeFiles     InputType = "files"
 	TypeDirectory InputType = "directory"
+	// TypeStrings is a list of text values (for example URLs).
+	TypeStrings InputType = "strings"
+	// TypeArgs is free text split like a shell command line and passed as
+	// extra args. It needs no arg mapping.
+	TypeArgs InputType = "args"
 )
 
 var inputTypes = map[InputType]bool{
 	TypeString: true, TypeText: true, TypeInteger: true, TypeNumber: true, TypeBoolean: true,
-	TypeEnum: true, TypeFile: true, TypeFiles: true, TypeDirectory: true,
+	TypeEnum: true, TypeFile: true, TypeFiles: true, TypeDirectory: true, TypeStrings: true, TypeArgs: true,
 }
+
+// IsList reports whether the input takes a list of values.
+func (t InputType) IsList() bool { return t == TypeFiles || t == TypeStrings }
 
 // Input describes one argument. The UI renders a widget from it and maggot
 // turns the value into argv using Arg.
@@ -100,7 +116,18 @@ type Input struct {
 	Max         *float64  `json:"max,omitempty"`
 	Options     []Option  `json:"options,omitempty"`
 	Accept      []string  `json:"accept,omitempty"`
-	Arg         Arg       `json:"arg"`
+	Arg         Arg       `json:"arg,omitzero"`
+
+	// Form hints for the web UI. They do not change argv.
+	Placeholder string `json:"placeholder,omitempty"`
+	Group       string `json:"group,omitempty"`
+	Advanced    bool   `json:"advanced,omitempty"`
+}
+
+// ChoiceArgs reports whether this enum maps each option to its own args
+// instead of using Arg.
+func (in Input) ChoiceArgs() bool {
+	return in.Type == TypeEnum && len(in.Options) > 0 && in.Options[0].Args != nil
 }
 
 // Arg says how an input becomes argv: a flag ("--width 10"), a boolean flag
@@ -108,15 +135,38 @@ type Input struct {
 type Arg struct {
 	Flag       string `json:"flag,omitempty"`
 	Positional bool   `json:"positional,omitempty"`
-	// Repeat makes a "files" input with a flag emit the flag for every file.
+	// Repeat makes a list input with a flag emit the flag for every value.
 	Repeat bool `json:"repeat,omitempty"`
+	// Args, for a boolean, are emitted when true (instead of Flag).
+	Args []string `json:"args,omitempty"`
+	// Template formats the value, e.g. "res:{value}" gives "-S res:1080".
+	Template string `json:"template,omitempty"`
 }
 
 // Option is one choice of an enum input. In JSON it can be a plain string or
-// {"value": "...", "label": "..."}.
+// {"value": "...", "label": "...", "args": [...]}. When options have Args,
+// choosing one emits those args (an empty list emits nothing).
 type Option struct {
-	Value string `json:"value"`
-	Label string `json:"label,omitempty"`
+	Value string   `json:"value"`
+	Label string   `json:"label,omitempty"`
+	Args  []string `json:"args"`
+}
+
+// MarshalJSON keeps "args": [] (meaning "emit nothing") but drops nil args.
+func (o Option) MarshalJSON() ([]byte, error) {
+	type withArgs struct {
+		Value string   `json:"value"`
+		Label string   `json:"label,omitempty"`
+		Args  []string `json:"args"`
+	}
+	type noArgs struct {
+		Value string `json:"value"`
+		Label string `json:"label,omitempty"`
+	}
+	if o.Args != nil {
+		return json.Marshal(withArgs(o))
+	}
+	return json.Marshal(noArgs{o.Value, o.Label})
 }
 
 func (o *Option) UnmarshalJSON(b []byte) error {
@@ -152,6 +202,16 @@ type Outputs struct {
 	DirFlag string `json:"dir_flag,omitempty"`
 	// Format of stdout for kind "stdout": "text" (default) or "json".
 	Format string `json:"format,omitempty"`
+	// Progress reads progress from output lines, for tools that do not
+	// write MAGGOT_EVENTS (for example yt-dlp).
+	Progress *Progress `json:"progress,omitempty"`
+}
+
+// Progress is a regex whose first group is a number on stdout or stderr
+// lines. Max is the value that means done (default 100, i.e. percent).
+type Progress struct {
+	Regex string  `json:"regex"`
+	Max   float64 `json:"max,omitempty"`
 }
 
 // Parse decodes a manifest strictly (unknown fields are errors) and validates it.
@@ -188,8 +248,11 @@ func Load(dir string) (*Manifest, error) {
 }
 
 // CheckFiles verifies the entry file exists inside dir and, when no
-// interpreter is set, that it is executable.
+// interpreter is set, that it is executable. Bin entries have no file.
 func (m *Manifest) CheckFiles(dir string) error {
+	if m.Entry.Bin != "" {
+		return nil
+	}
 	p := filepath.Join(dir, filepath.FromSlash(m.Entry.Path))
 	info, err := os.Stat(p)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -207,8 +270,12 @@ func (m *Manifest) CheckFiles(dir string) error {
 	return nil
 }
 
-// EntryPath returns the absolute path of the entry file for a tool in dir.
+// EntryPath returns the absolute path of the entry file for a tool in dir,
+// or the bin name for a bin entry.
 func (m *Manifest) EntryPath(dir string) (string, error) {
+	if m.Entry.Bin != "" {
+		return m.Entry.Bin, nil
+	}
 	abs, err := filepath.Abs(filepath.Join(dir, filepath.FromSlash(m.Entry.Path)))
 	if err != nil {
 		return "", err

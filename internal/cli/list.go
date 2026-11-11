@@ -8,6 +8,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/nxnom/maggot/internal/manifest"
+	"github.com/nxnom/maggot/internal/runner"
 	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/spf13/cobra"
 )
@@ -149,10 +150,7 @@ func (a *app) infoCmd() *cobra.Command {
 				fmt.Fprintln(a.stdout, "\ninputs:")
 				w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 				for _, in := range m.Inputs {
-					how := in.Arg.Flag
-					if in.Arg.Positional {
-						how = "<positional>"
-					}
+					how := argSummary(in)
 					req := ""
 					if in.Required {
 						req = "required"
@@ -179,11 +177,7 @@ func (a *app) infoCmd() *cobra.Command {
 
 // directCommand is the argv prefix to run the tool without maggot.
 func directCommand(t *toolbox.Tool) ([]string, error) {
-	entry, err := t.Manifest.EntryPath(t.Dir)
-	if err != nil {
-		return nil, err
-	}
-	return append(append([]string{}, t.Manifest.Entry.Interpreter...), entry), nil
+	return runner.Argv(t.Dir, t.Manifest, nil)
 }
 
 func quoteAll(args []string) []string {
@@ -195,4 +189,28 @@ func quoteAll(args []string) []string {
 		out[i] = s
 	}
 	return out
+}
+
+// argSummary describes how an input becomes argv, for `maggot info`.
+func argSummary(in manifest.Input) string {
+	switch {
+	case in.Type == manifest.TypeArgs:
+		return "<extra args>"
+	case in.ChoiceArgs():
+		parts := make([]string, len(in.Options))
+		for i, o := range in.Options {
+			parts[i] = o.Value + "=" + strings.Join(o.Args, " ")
+			if len(o.Args) == 0 {
+				parts[i] = o.Value + "=(none)"
+			}
+		}
+		return strings.Join(parts, "; ")
+	case len(in.Arg.Args) > 0:
+		return strings.Join(in.Arg.Args, " ")
+	case in.Arg.Positional:
+		return "<positional>"
+	case in.Arg.Template != "":
+		return in.Arg.Flag + " " + in.Arg.Template
+	}
+	return in.Arg.Flag
 }

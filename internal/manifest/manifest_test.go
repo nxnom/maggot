@@ -105,7 +105,7 @@ func TestParseInvalid(t *testing.T) {
 		{"bool positional", func(m map[string]any) { input(m, 2)["arg"] = map[string]any{"positional": true} }, "boolean inputs must use a flag"},
 		{"after variadic", func(m map[string]any) {
 			m["inputs"] = append(m["inputs"].([]any), map[string]any{"name": "dest", "type": "string", "arg": map[string]any{"positional": true}})
-		}, "may follow the variadic"},
+		}, "may follow the list input"},
 		{"files flag no repeat", func(m map[string]any) { input(m, 3)["arg"] = map[string]any{"flag": "--in"} }, "need repeat"},
 		{"no kind", func(m map[string]any) { m["outputs"] = map[string]any{"dir_flag": "--out"} }, "outputs.kind"},
 		{"bad kind", func(m map[string]any) { m["outputs"] = map[string]any{"kind": "video"} }, "outputs.kind"},
@@ -128,7 +128,7 @@ func TestValidationErrorListsAllProblems(t *testing.T) {
 	if !IsValidationError(err) {
 		t.Fatalf("want ValidationError, got %v", err)
 	}
-	for _, want := range []string{"id:", "version:", "name:", "description:", "entry.path:"} {
+	for _, want := range []string{"id:", "version:", "name:", "description:", "entry:"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in %v", want, err)
 		}
@@ -171,5 +171,115 @@ func TestOptionRejectsUnknownFields(t *testing.T) {
 	var o Option
 	if err := json.Unmarshal([]byte(`{"value":"a","lable":"A"}`), &o); err == nil {
 		t.Fatal("want error for misspelled field")
+	}
+}
+
+const binJSON = `{
+  "schema": 1, "id": "yt", "version": "1.0.0", "name": "YT", "description": "d",
+  "entry": {"bin": "yt-dlp", "args": ["--newline", "-o", "%(title)s.%(ext)s"]},
+  "inputs": [
+    {"name": "urls", "type": "strings", "required": true, "placeholder": "https://", "arg": {"positional": true}},
+    {"name": "mode", "type": "enum", "default": "video", "options": [
+      {"value": "video", "args": []},
+      {"value": "mp3", "label": "Audio MP3", "args": ["-x", "--audio-format", "mp3"]}
+    ]},
+    {"name": "max_height", "type": "enum", "options": ["1080", "720"], "arg": {"flag": "-S", "template": "res:{value}"}},
+    {"name": "subs", "type": "boolean", "group": "Extras", "arg": {"args": ["--write-subs", "--embed-subs"]}},
+    {"name": "extra", "type": "args", "advanced": true, "default": "--limit-rate '2M'"}
+  ],
+  "outputs": {"kind": "files", "dir_flag": "-P", "progress": {"regex": "\\[download\\]\\s+([\\d.]+)%"}}
+}`
+
+func TestBinManifest(t *testing.T) {
+	m, err := Parse([]byte(binJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Inputs[1].ChoiceArgs() || m.Inputs[2].ChoiceArgs() {
+		t.Fatal("ChoiceArgs")
+	}
+	// A bin tool has no files to check.
+	if err := m.CheckFiles(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	// "args": [] must survive a JSON round trip (it means "emit nothing").
+	b, _ := json.Marshal(m)
+	if !strings.Contains(string(b), `{"value":"video","args":[]}`) || !strings.Contains(string(b), `{"value":"1080"}`) {
+		t.Fatalf("option JSON: %s", b)
+	}
+	if _, err := Parse(b); err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+}
+
+func TestBinManifestInvalid(t *testing.T) {
+	mut := func(fn func(m map[string]any)) []byte {
+		var m map[string]any
+		json.Unmarshal([]byte(binJSON), &m)
+		fn(m)
+		b, _ := json.Marshal(m)
+		return b
+	}
+	cases := []struct {
+		name string
+		fn   func(m map[string]any)
+		want string
+	}{
+		{"path and bin", func(m map[string]any) { m["entry"] = map[string]any{"bin": "x", "path": "run"} }, "not both"},
+		{"bin with interpreter", func(m map[string]any) {
+			m["entry"] = map[string]any{"bin": "x", "interpreter": []any{"sh"}}
+		}, "only allowed with entry.path"},
+		{"bad bin", func(m map[string]any) { m["entry"] = map[string]any{"bin": "a b"} }, "invalid program name"},
+		{"mixed option args", func(m map[string]any) {
+			input(m, 1)["options"] = []any{map[string]any{"value": "a", "args": []any{}}, "b"}
+		}, "every option has args or none"},
+		{"choice args with flag", func(m map[string]any) { input(m, 1)["arg"] = map[string]any{"flag": "--mode"} }, "not used for this input"},
+		{"args input with flag", func(m map[string]any) { input(m, 4)["arg"] = map[string]any{"flag": "--x"} }, "not used for this input"},
+		{"bad args default", func(m map[string]any) { input(m, 4)["default"] = "'open" }, "unclosed quote"},
+		{"template without value", func(m map[string]any) { input(m, 2)["arg"] = map[string]any{"flag": "-S", "template": "res"} }, "must contain {value}"},
+		{"bool flag and args", func(m map[string]any) {
+			input(m, 3)["arg"] = map[string]any{"flag": "--s", "args": []any{"--a"}}
+		}, "either flag or args"},
+		{"args on non-bool", func(m map[string]any) {
+			input(m, 2)["arg"] = map[string]any{"flag": "-S", "args": []any{"--a"}}
+		}, "only allowed for boolean"},
+		{"strings flag without repeat", func(m map[string]any) { input(m, 0)["arg"] = map[string]any{"flag": "--url"} }, "need repeat"},
+		{"progress no group", func(m map[string]any) {
+			m["outputs"] = map[string]any{"kind": "files", "progress": map[string]any{"regex": "\\d+%"}}
+		}, "needs a group"},
+		{"progress bad regex", func(m map[string]any) {
+			m["outputs"] = map[string]any{"kind": "files", "progress": map[string]any{"regex": "("}}
+		}, "invalid regex"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse(mut(tc.fn))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestSplitArgs(t *testing.T) {
+	cases := map[string][]string{
+		``:                                nil,
+		`--limit-rate 2M`:                 {"--limit-rate", "2M"},
+		`  a   b  `:                       {"a", "b"},
+		`-o '%(title)s [%(id)s].%(ext)s'`: {"-o", "%(title)s [%(id)s].%(ext)s"},
+		`--x "a \"q\" b"`:                 {"--x", `a "q" b`},
+		`a\ b c`:                          {"a b", "c"},
+		`''`:                              {""},
+	}
+	for in, want := range cases {
+		got, err := SplitArgs(in)
+		if err != nil || strings.Join(got, "|") != strings.Join(want, "|") || len(got) != len(want) {
+			t.Errorf("SplitArgs(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{`'open`, `"open`} {
+		if _, err := SplitArgs(bad); err == nil {
+			t.Errorf("SplitArgs(%q) should fail", bad)
+		}
 	}
 }

@@ -125,3 +125,14 @@ func TestRequirementsAddsInterpreter(t *testing.T) {
 		t.Fatalf("absolute interpreter is not a PATH requirement: %+v", reqs)
 	}
 }
+
+func TestRequirementsAddsBin(t *testing.T) {
+	m := &manifest.Manifest{Entry: manifest.Entry{Bin: "yt-dlp"}}
+	if reqs := Requirements(m); len(reqs) != 1 || reqs[0].Bin != "yt-dlp" {
+		t.Fatalf("reqs: %+v", reqs)
+	}
+	m.Requires = []manifest.Requirement{{Bin: "yt-dlp", Version: ">=2024.1"}}
+	if reqs := Requirements(m); len(reqs) != 1 || reqs[0].Version == "" {
+		t.Fatalf("listed bin should not be duplicated: %+v", reqs)
+	}
+}

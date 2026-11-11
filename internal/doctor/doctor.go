@@ -76,21 +76,23 @@ func New() *Checker {
 }
 
 // Requirements returns the manifest requirements plus an implicit one for the
-// entry interpreter (for example "uv" or "deno") when it is not listed.
+// program that starts the tool (entry.bin, or the interpreter such as "uv")
+// when it is not listed.
 func Requirements(m *manifest.Manifest) []manifest.Requirement {
 	reqs := append([]manifest.Requirement{}, m.Requires...)
-	if len(m.Entry.Interpreter) > 0 {
-		bin := m.Entry.Interpreter[0]
-		if !filepath.IsAbs(bin) && !strings.ContainsAny(bin, `/\`) {
-			for _, r := range reqs {
-				if r.Bin == bin {
-					return reqs
-				}
-			}
-			reqs = append([]manifest.Requirement{{Bin: bin}}, reqs...)
+	bin := m.Entry.Bin
+	if bin == "" && len(m.Entry.Interpreter) > 0 {
+		bin = m.Entry.Interpreter[0]
+	}
+	if bin == "" || filepath.IsAbs(bin) || strings.ContainsAny(bin, `/\`) {
+		return reqs
+	}
+	for _, r := range reqs {
+		if r.Bin == bin {
+			return reqs
 		}
 	}
-	return reqs
+	return append([]manifest.Requirement{{Bin: bin}}, reqs...)
 }
 
 // CheckAll checks every requirement of a manifest.

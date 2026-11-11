@@ -65,6 +65,18 @@ func (m *Manifest) Validate() error {
 	v.env(m.Env)
 	v.inputs(m.Inputs, m.Outputs)
 	if o := m.Outputs; o != nil {
+		if o.Progress != nil {
+			re, err := regexp.Compile(o.Progress.Regex)
+			switch {
+			case o.Progress.Regex == "" || err != nil:
+				v.add("outputs.progress.regex", "invalid regex: %v", err)
+			case re.NumSubexp() < 1:
+				v.add("outputs.progress.regex", "needs a group that captures the number, e.g. ([\\d.]+)%%")
+			}
+			if o.Progress.Max < 0 {
+				v.add("outputs.progress.max", "must be positive")
+			}
+		}
 		if !outputKinds[o.Kind] {
 			v.add("outputs.kind", "must be one of files, stdout, inplace, none (got %q)", o.Kind)
 		}
@@ -114,8 +126,17 @@ func IsValidationError(err error) bool {
 
 func (v *validator) entry(e Entry) {
 	switch {
-	case e.Path == "":
-		v.add("entry.path", "is required")
+	case e.Path == "" && e.Bin == "":
+		v.add("entry", "needs path (a file in the tool folder) or bin (a program on PATH)")
+	case e.Path != "" && e.Bin != "":
+		v.add("entry", "use either path or bin, not both")
+	case e.Bin != "":
+		if !binPattern.MatchString(e.Bin) {
+			v.add("entry.bin", "invalid program name %q", e.Bin)
+		}
+		if len(e.Interpreter) > 0 {
+			v.add("entry.interpreter", "only allowed with entry.path")
+		}
 	case strings.Contains(e.Path, `\`):
 		v.add("entry.path", "use forward slashes (got %q)", e.Path)
 	case path.IsAbs(e.Path) || path.Clean(e.Path) != e.Path || e.Path == "." || strings.HasPrefix(e.Path, "../") || e.Path == "..":
@@ -196,20 +217,7 @@ func (v *validator) inputs(inputs []Input, out *Outputs) {
 			v.add(f+".type", "unknown type %q", in.Type)
 			continue
 		}
-		if in.Type == TypeEnum {
-			if len(in.Options) == 0 {
-				v.add(f+".options", "enum needs at least one option")
-			}
-			seenOpt := map[string]bool{}
-			for j, o := range in.Options {
-				if o.Value == "" || seenOpt[o.Value] {
-					v.add(fmt.Sprintf("%s.options[%d]", f, j), "empty or duplicate value %q", o.Value)
-				}
-				seenOpt[o.Value] = true
-			}
-		} else if len(in.Options) > 0 {
-			v.add(f+".options", "only allowed for enum")
-		}
+		v.options(f, in)
 		numeric := in.Type == TypeInteger || in.Type == TypeNumber
 		if (in.Min != nil || in.Max != nil) && !numeric {
 			v.add(f, "min/max only allowed for integer and number")
@@ -225,36 +233,95 @@ func (v *validator) inputs(inputs []Input, out *Outputs) {
 				v.add(f+".default", "%v", err)
 			}
 		}
-		// argv mapping
+
 		a := in.Arg
+		if a.Template != "" {
+			if !strings.Contains(a.Template, "{value}") {
+				v.add(f+".arg.template", "must contain {value}")
+			}
+			if in.Type == TypeBoolean || in.Type == TypeArgs || in.ChoiceArgs() {
+				v.add(f+".arg.template", "not allowed for this input")
+			}
+		}
+		if len(a.Args) > 0 && in.Type != TypeBoolean {
+			v.add(f+".arg.args", "only allowed for boolean inputs (enum options have their own args)")
+		}
+		if a.Repeat && (!in.Type.IsList() || a.Flag == "") {
+			v.add(f+".arg.repeat", "only allowed for files/strings inputs with a flag")
+		}
+
+		// Inputs that build their own args need no flag or position.
+		if in.Type == TypeArgs || in.ChoiceArgs() {
+			if a.Flag != "" || a.Positional || len(a.Args) > 0 {
+				v.add(f+".arg", "not used for this input: remove it")
+			}
+			continue
+		}
+		if in.Type == TypeBoolean {
+			switch {
+			case a.Positional:
+				v.add(f+".arg", "boolean inputs must use a flag or args")
+			case a.Flag != "" && len(a.Args) > 0:
+				v.add(f+".arg", "use either flag or args, not both")
+			case a.Flag == "" && len(a.Args) == 0:
+				v.add(f+".arg", "needs a flag or args")
+			}
+			if a.Flag != "" {
+				v.flag(f, a.Flag, flags)
+			}
+			continue
+		}
 		switch {
 		case a.Flag != "" && a.Positional:
 			v.add(f+".arg", "use either flag or positional, not both")
 		case a.Flag == "" && !a.Positional:
 			v.add(f+".arg", "needs a flag or positional: true")
 		case a.Flag != "":
-			if !flagPattern.MatchString(a.Flag) {
-				v.add(f+".arg.flag", "invalid flag %q", a.Flag)
-			} else if flags[a.Flag] {
-				v.add(f+".arg.flag", "duplicate flag %q", a.Flag)
+			v.flag(f, a.Flag, flags)
+			if in.Type.IsList() && !a.Repeat {
+				v.add(f+".arg", "list inputs with a flag need repeat: true (or use positional)")
 			}
-			flags[a.Flag] = true
 		case a.Positional:
-			if in.Type == TypeBoolean {
-				v.add(f+".arg", "boolean inputs must use a flag")
-			}
 			if variadicAt >= 0 {
-				v.add(f+".arg", "no positional input may follow the variadic input %q", inputs[variadicAt].Name)
+				v.add(f+".arg", "no positional input may follow the list input %q", inputs[variadicAt].Name)
 			}
-			if in.Type == TypeFiles {
+			if in.Type.IsList() {
 				variadicAt = i
 			}
 		}
-		if a.Repeat && (in.Type != TypeFiles || a.Flag == "") {
-			v.add(f+".arg.repeat", "only allowed for files inputs with a flag")
+	}
+}
+
+func (v *validator) flag(f, flag string, seen map[string]bool) {
+	if !flagPattern.MatchString(flag) {
+		v.add(f+".arg.flag", "invalid flag %q", flag)
+	} else if seen[flag] {
+		v.add(f+".arg.flag", "duplicate flag %q", flag)
+	}
+	seen[flag] = true
+}
+
+func (v *validator) options(f string, in Input) {
+	if in.Type != TypeEnum {
+		if len(in.Options) > 0 {
+			v.add(f+".options", "only allowed for enum")
 		}
-		if in.Type == TypeFiles && a.Flag != "" && !a.Repeat {
-			v.add(f+".arg", "files inputs with a flag need repeat: true (or use positional)")
+		return
+	}
+	if len(in.Options) == 0 {
+		v.add(f+".options", "enum needs at least one option")
+		return
+	}
+	withArgs := in.Options[0].Args != nil
+	seen := map[string]bool{}
+	for j, o := range in.Options {
+		of := fmt.Sprintf("%s.options[%d]", f, j)
+		if o.Value == "" || seen[o.Value] {
+			v.add(of, "empty or duplicate value %q", o.Value)
+		}
+		seen[o.Value] = true
+		if (o.Args != nil) != withArgs {
+			v.add(of, "either every option has args or none does")
 		}
 	}
 }
@@ -262,9 +329,15 @@ func (v *validator) inputs(inputs []Input, out *Outputs) {
 // CheckValue validates a value (as decoded from JSON) against the input type.
 func (in Input) CheckValue(val any) error {
 	switch in.Type {
-	case TypeString, TypeText, TypeFile, TypeDirectory:
-		if _, ok := val.(string); !ok {
+	case TypeString, TypeText, TypeFile, TypeDirectory, TypeArgs:
+		s, ok := val.(string)
+		if !ok {
 			return fmt.Errorf("must be a string")
+		}
+		if in.Type == TypeArgs {
+			if _, err := SplitArgs(s); err != nil {
+				return err
+			}
 		}
 	case TypeEnum:
 		s, ok := val.(string)
@@ -295,21 +368,18 @@ func (in Input) CheckValue(val any) error {
 		if in.Max != nil && n > *in.Max {
 			return fmt.Errorf("must be <= %v", *in.Max)
 		}
-	case TypeFiles:
-		list, ok := val.([]any)
-		if !ok {
-			if ss, ok2 := val.([]string); ok2 {
-				if len(ss) == 0 && in.Required {
-					return fmt.Errorf("needs at least one file")
+	case TypeFiles, TypeStrings:
+		switch list := val.(type) {
+		case []string:
+			return nil
+		case []any:
+			for _, item := range list {
+				if _, ok := item.(string); !ok {
+					return fmt.Errorf("must be a list of strings")
 				}
-				return nil
 			}
-			return fmt.Errorf("must be a list of paths")
-		}
-		for _, item := range list {
-			if _, ok := item.(string); !ok {
-				return fmt.Errorf("must be a list of paths")
-			}
+		default:
+			return fmt.Errorf("must be a list of strings")
 		}
 	}
 	return nil
