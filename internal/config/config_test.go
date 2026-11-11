@@ -112,3 +112,19 @@ func TestProblems(t *testing.T) {
 		t.Errorf("valid config has problems: %v", p)
 	}
 }
+
+func TestDataDirAndKeep(t *testing.T) {
+	d := t.TempDir()
+	t.Setenv("MAGGOT_DATA_DIR", d)
+	if got, _ := DataDir(); got != d {
+		t.Fatalf("DataDir = %q", got)
+	}
+	t.Setenv("MAGGOT_DATA_DIR", "")
+	t.Setenv("XDG_DATA_HOME", d)
+	if got, _ := DataDir(); got != filepath.Join(d, "maggot") {
+		t.Fatalf("DataDir = %q", got)
+	}
+	if (&Config{}).Keep() != DefaultRunsKeep || (&Config{RunsKeep: 5}).Keep() != 5 {
+		t.Fatal("Keep")
+	}
+}

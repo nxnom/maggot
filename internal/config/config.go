@@ -27,6 +27,8 @@ type ToolboxRef struct {
 type Config struct {
 	Toolboxes []ToolboxRef `json:"toolboxes"`
 	Default   string       `json:"default_toolbox,omitempty"`
+	// RunsKeep is how many web UI runs to keep per tool (default 30).
+	RunsKeep int `json:"runs_keep,omitempty"`
 
 	path string
 }
@@ -53,6 +55,41 @@ func Dir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".config", "maggot"), nil
+}
+
+// DefaultRunsKeep is used when runs_keep is not set.
+const DefaultRunsKeep = 30
+
+// Keep returns how many runs to keep per tool.
+func (c *Config) Keep() int {
+	if c.RunsKeep > 0 {
+		return c.RunsKeep
+	}
+	return DefaultRunsKeep
+}
+
+// DataDir is where maggot keeps data it creates (web UI runs, uploads):
+// $MAGGOT_DATA_DIR, else $XDG_DATA_HOME/maggot, else ~/.local/share/maggot
+// (%LocalAppData%\maggot on Windows).
+func DataDir() (string, error) {
+	if d := os.Getenv("MAGGOT_DATA_DIR"); d != "" {
+		return filepath.Abs(d)
+	}
+	if d := os.Getenv("XDG_DATA_HOME"); d != "" {
+		return filepath.Join(d, "maggot"), nil
+	}
+	if runtime.GOOS == "windows" {
+		d, err := os.UserCacheDir() // %LocalAppData%
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(d, "maggot"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "share", "maggot"), nil
 }
 
 // Load reads the config file. A missing file gives an empty config.
@@ -125,6 +162,9 @@ func (c *Config) Problems() []string {
 				out = append(out, fmt.Sprintf("%s.path: %s has no toolbox.json", f, t.Path))
 			}
 		}
+	}
+	if c.RunsKeep < 0 {
+		out = append(out, "runs_keep: must be 0 (default) or more")
 	}
 	if c.Default != "" && !names[c.Default] {
 		out = append(out, fmt.Sprintf("default_toolbox: %q is not a registered toolbox", c.Default))
