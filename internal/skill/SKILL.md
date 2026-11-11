@@ -1,6 +1,6 @@
 ---
 name: maggot
-description: Shared local toolbox of tested CLI tools (maggot). Use BEFORE writing any script or utility for a reusable task — converting, resizing, compressing or renaming files, media/image/PDF/audio/video processing, data extraction, downloads, API helpers — to find and run an existing tool. Also use to create a new reusable tool and save it so every future project and agent can reuse it.
+description: Shared local toolbox of tested CLI tools (maggot). Use BEFORE writing any script, utility or CLI for a reusable task — converting, resizing, compressing or renaming files, media/image/PDF/audio/video processing, data extraction, downloads, API helpers — and whenever the user asks to build, create or make a tool, CLI, script or utility: search maggot first, then reuse or improve an existing tool. Also use to create a new reusable tool and save it so every future project and agent can reuse it.
 ---
 
 # maggot
@@ -11,7 +11,9 @@ not matter: the toolbox is the memory.
 
 ## Rule
 
-Before you write code for a utility that could be reused, search maggot. Reuse a
+Before you write code for a utility that could be reused, search maggot. This
+includes requests like "build a tool for X" or "make a CLI that does Y": a tool
+for X may already exist. Reuse a
 fitting tool. Write a new tool only when nothing fits, and then save it to the
 toolbox so it is never written again. One-off code that is specific to the
 current project does not belong in maggot.

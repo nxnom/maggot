@@ -12,6 +12,7 @@ import (
 	"github.com/nxnom/maggot/internal/guide"
 	"github.com/nxnom/maggot/internal/manifest"
 	"github.com/nxnom/maggot/internal/scaffold"
+	"github.com/nxnom/maggot/internal/search"
 	"github.com/nxnom/maggot/internal/testkit"
 	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/spf13/cobra"
@@ -52,6 +53,7 @@ Pick the simplest kind that works:
 			if err != nil {
 				return err
 			}
+			a.warnSimilar(args[0], desc)
 			abs, _ := filepath.Abs(path)
 			fmt.Fprintf(a.stdout, "created %s\nnext: edit it, then `maggot test %s` and `maggot import %s`\n", abs, abs, abs)
 			return nil
@@ -64,6 +66,31 @@ Pick the simplest kind that works:
 	cmd.Flags().StringVar(&name, "name", "", "display name")
 	cmd.Flags().StringVar(&desc, "description", "", "one-line description")
 	return cmd
+}
+
+// warnSimilar lists existing tools that look like the new one, so agents
+// improve a tool instead of adding a near-duplicate.
+func (a *app) warnSimilar(id, desc string) {
+	e, err := a.loadEnv()
+	if err != nil {
+		return
+	}
+	tools, _ := e.Set.Tools()
+	hits := search.Rank(tools, strings.ReplaceAll(id, "-", " ")+" "+desc)
+	var similar []string
+	for _, h := range hits {
+		// Only strong matches: most query words matched.
+		if len(h.Matched) >= 2 || h.Tool.Manifest.ID == id {
+			similar = append(similar, fmt.Sprintf("  %s — %s", h.Tool.Ref(), h.Tool.Manifest.Description))
+		}
+		if len(similar) == 5 {
+			break
+		}
+	}
+	if len(similar) > 0 {
+		fmt.Fprintf(a.stderr, "note: similar tools already exist; if one almost fits, improve it (bump its version) instead:\n%s\n",
+			strings.Join(similar, "\n"))
+	}
 }
 
 // toolDirArg accepts a tool folder path or a tool reference.

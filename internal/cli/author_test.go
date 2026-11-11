@@ -61,3 +61,18 @@ func TestGuide(t *testing.T) {
 		t.Fatal("guide text missing")
 	}
 }
+
+func TestNewWarnsAboutSimilarTools(t *testing.T) {
+	isolate(t)
+	tb := newToolbox(t, "main")
+	addTool(t, tb, "bg-remover", `{"schema":1,"id":"bg-remover","version":"1.0.0","name":"Background Remover",
+	  "description":"Remove the background from photos.","entry":{"path":"run"}}`, "#!/bin/sh\n")
+	_, _, e := run(t, "new", "photo-background-cut", "--lang", "sh", "--dir", t.TempDir(), "--description", "Remove photo backgrounds")
+	if !strings.Contains(e, "similar tools already exist") || !strings.Contains(e, "main/bg-remover") {
+		t.Fatalf("want warning, got %q", e)
+	}
+	_, _, e = run(t, "new", "pdf-merge", "--lang", "sh", "--dir", t.TempDir(), "--description", "Merge PDF files")
+	if strings.Contains(e, "similar") {
+		t.Fatalf("unexpected warning: %q", e)
+	}
+}
