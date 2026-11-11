@@ -33,7 +33,7 @@ func newRootCmd(a *app) *cobra.Command {
 		SilenceErrors: true,
 		Version:       Version,
 		Args:          cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
+		RunE:          func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	root.SetIn(a.stdin)
 	root.SetOut(a.stdout)
