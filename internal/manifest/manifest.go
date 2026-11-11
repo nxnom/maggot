@@ -37,7 +37,9 @@ type Manifest struct {
 	Env      []EnvVar      `json:"env,omitempty"`
 	Inputs   []Input       `json:"inputs,omitempty"`
 	Outputs  *Outputs      `json:"outputs,omitempty"`
-	Examples []string      `json:"examples,omitempty"`
+	// Warm says the tool can stay loaded in memory between runs.
+	Warm     *Warm    `json:"warm,omitempty"`
+	Examples []string `json:"examples,omitempty"`
 }
 
 // Entry is the program to start. Use exactly one of Path or Bin.
@@ -184,6 +186,14 @@ func (o *Option) UnmarshalJSON(b []byte) error {
 	}
 	*o = Option(p)
 	return nil
+}
+
+// Warm describes the tool's serve mode. `maggot warm` starts the entry with
+// Args (for example ["--serve"]); the tool loads once, listens on the socket
+// in $MAGGOT_WARM_SOCKET and exits after $MAGGOT_WARM_IDLE seconds without
+// jobs. Normal runs forward their job to it when it is running.
+type Warm struct {
+	Args []string `json:"args"`
 }
 
 // Output kinds.

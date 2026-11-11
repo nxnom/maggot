@@ -107,6 +107,7 @@ func TestParseInvalid(t *testing.T) {
 			m["inputs"] = append(m["inputs"].([]any), map[string]any{"name": "dest", "type": "string", "arg": map[string]any{"positional": true}})
 		}, "may follow the list input"},
 		{"files flag no repeat", func(m map[string]any) { input(m, 3)["arg"] = map[string]any{"flag": "--in"} }, "need repeat"},
+		{"warm without args", func(m map[string]any) { m["warm"] = map[string]any{"args": []any{}} }, "warm.args"},
 		{"no kind", func(m map[string]any) { m["outputs"] = map[string]any{"dir_flag": "--out"} }, "outputs.kind"},
 		{"bad kind", func(m map[string]any) { m["outputs"] = map[string]any{"kind": "video"} }, "outputs.kind"},
 		{"dir flag on stdout", func(m map[string]any) { m["outputs"] = map[string]any{"kind": "stdout", "dir_flag": "--o"} }, "only allowed with kind \"files\""},

@@ -11,6 +11,7 @@ import (
 
 	"github.com/nxnom/maggot/internal/runner"
 	"github.com/nxnom/maggot/internal/toolbox"
+	"github.com/nxnom/maggot/internal/warm"
 	"github.com/nxnom/maggot/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -84,6 +85,7 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 			if err != nil {
 				return err
 			}
+			extra = append(extra, warm.Env(t)...) // reach a warm process if one runs
 			c, err := runner.Command(t.Dir, t.Manifest, toolArgs, runner.Options{ExtraEnv: extra, EventsPath: events})
 			if err != nil {
 				return err

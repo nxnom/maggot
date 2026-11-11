@@ -52,6 +52,8 @@ type Options struct {
 	Description string
 	// Bin is the program to run, for Lang "bin".
 	Bin string
+	// Warm adds a serve mode that keeps the tool loaded (python only).
+	Warm bool
 }
 
 // Create writes a new tool folder at parent/<id> and returns its path.
@@ -65,6 +67,9 @@ func Create(parent string, o Options) (string, error) {
 	l, ok := langs[o.Lang]
 	if !ok {
 		return "", fmt.Errorf("unknown kind %q (choose: %s)", o.Lang, strings.Join(Langs(), ", "))
+	}
+	if o.Warm && o.Lang != "python" {
+		return "", fmt.Errorf("--warm is available for python tools (see `maggot guide` for the protocol to do it in %s)", o.Lang)
 	}
 	if o.Description == "" {
 		o.Description = "Copy text files, optionally in upper case. (Template: replace with what the tool does.)"
@@ -81,6 +86,11 @@ func Create(parent string, o Options) (string, error) {
 		Outputs:  &manifest.Outputs{Kind: manifest.OutputFiles, DirFlag: "--out"},
 		Examples: []string{fmt.Sprintf("maggot run %s -- --upper --out out notes.txt", o.ID)},
 	}
+	tmpl := o.Lang
+	if o.Warm {
+		tmpl = "python-warm"
+		m.Warm = &manifest.Warm{Args: []string{"--serve"}}
+	}
 	if err := m.Validate(); err != nil {
 		return "", err
 	}
@@ -89,17 +99,25 @@ func Create(parent string, o Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	src, err := templates.ReadFile("templates/" + o.Lang + "/" + l.file)
+	src, err := templates.ReadFile("templates/" + tmpl + "/" + l.file)
 	if err != nil {
 		return "", err
 	}
 	body := strings.NewReplacer("{{ID}}", o.ID, "{{NAME}}", o.Name, "{{DESCRIPTION}}", o.Description).Replace(string(src))
-	return write(dir, m, []file{
+	extra := []file{}
+	if o.Warm {
+		helper, err := templates.ReadFile("templates/python-warm/maggot_warm.py")
+		if err != nil {
+			return "", err
+		}
+		extra = append(extra, file{"maggot_warm.py", string(helper), 0o644})
+	}
+	return write(dir, m, append(extra, []file{
 		{l.file, body, 0o755},
 		{"tests/fixtures/hello.txt", "hello maggot\n", 0o644},
 		{"tests/cases.json", casesJSON(), 0o644},
 		{"README.md", readme(m, "./"+l.file, "--upper --out out notes.txt"), 0o644},
-	})
+	}...))
 }
 
 type file struct {

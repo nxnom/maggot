@@ -13,6 +13,7 @@ import (
 	"github.com/nxnom/maggot/internal/config"
 	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/nxnom/maggot/internal/ui"
+	"github.com/nxnom/maggot/internal/warm"
 	"github.com/spf13/cobra"
 )
 
@@ -43,6 +44,7 @@ func (a *app) runReview(t *toolbox.Tool, args []string, values map[string]any) e
 	if err != nil {
 		return err
 	}
+	env = append(env, warm.Env(t)...)
 	cwd, _ := os.Getwd()
 	opts := ui.StartOptions{ExtraEnv: env, Cwd: cwd, Review: true, Origin: "cli"}
 	if values != nil {

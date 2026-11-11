@@ -66,6 +66,7 @@ func (a *app) guideCmd() *cobra.Command {
 
 func (a *app) newCmd() *cobra.Command {
 	var lang, dir, name, desc, bin string
+	var warmMode bool
 	cmd := &cobra.Command{
 		Use:   "new <id>",
 		Short: "Create a new tool folder from a working template",
@@ -92,7 +93,7 @@ Pick the simplest kind that works:
 					return err
 				}
 			}
-			path, err := scaffold.Create(dir, scaffold.Options{ID: args[0], Lang: lang, Name: name, Description: desc, Bin: bin})
+			path, err := scaffold.Create(dir, scaffold.Options{ID: args[0], Lang: lang, Name: name, Description: desc, Bin: bin, Warm: warmMode})
 			if err != nil {
 				return err
 			}
@@ -104,6 +105,7 @@ Pick the simplest kind that works:
 	}
 	cmd.Flags().StringVar(&lang, "lang", "", "kind of tool: "+strings.Join(scaffold.Langs(), ", ")+" (required)")
 	cmd.Flags().StringVar(&bin, "bin", "", "program to run, for --lang bin")
+	cmd.Flags().BoolVar(&warmMode, "warm", false, "python: add a serve mode that keeps a slow-loading model in memory (see `maggot warm`)")
 	_ = cmd.MarkFlagRequired("lang")
 	cmd.Flags().StringVar(&dir, "dir", "", "parent folder for the new tool (default: the maggot drafts folder)")
 	cmd.Flags().StringVar(&name, "name", "", "display name")

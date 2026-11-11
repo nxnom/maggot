@@ -64,6 +64,9 @@ func (m *Manifest) Validate() error {
 	v.requires(m.Requires)
 	v.env(m.Env)
 	v.inputs(m.Inputs, m.Outputs)
+	if m.Warm != nil && len(m.Warm.Args) == 0 {
+		v.add("warm.args", `needs the args that start serve mode, e.g. ["--serve"]`)
+	}
 	if o := m.Outputs; o != nil {
 		if o.Progress != nil {
 			re, err := regexp.Compile(o.Progress.Regex)

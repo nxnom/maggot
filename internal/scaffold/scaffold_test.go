@@ -63,3 +63,26 @@ func TestCreateErrors(t *testing.T) {
 		t.Fatalf("dup: %v", err)
 	}
 }
+
+func TestWarmTemplate(t *testing.T) {
+	if _, err := exec.LookPath("uv"); err != nil {
+		t.Skip("uv not installed")
+	}
+	dir, err := Create(t.TempDir(), Options{ID: "warm-demo", Lang: "python", Warm: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := manifest.Load(dir)
+	if err != nil || m.Warm == nil || m.Warm.Args[0] != "--serve" {
+		t.Fatalf("manifest: %+v %v", m, err)
+	}
+	s, _ := testkit.Load(dir)
+	for _, r := range testkit.Run(context.Background(), dir, m, s, testkit.Options{}) {
+		if !r.Passed {
+			t.Errorf("cold case %q failed: %v\n%s", r.Name, r.Failures, r.Stderr)
+		}
+	}
+	if _, err := Create(t.TempDir(), Options{ID: "x", Lang: "sh", Warm: true}); err == nil {
+		t.Fatal("--warm should be python only")
+	}
+}

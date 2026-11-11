@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nxnom/maggot/internal/config"
+	"github.com/nxnom/maggot/internal/warm"
 	"github.com/nxnom/maggot/internal/workspace"
 )
 
@@ -39,6 +40,7 @@ func (s *Server) apiStartRun(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	env = append(env, warm.Env(t)...)
 	if req.OutDir != "" && !filepath.IsAbs(config.ExpandHome(req.OutDir)) {
 		return errors.New("choose an output folder (absolute path)")
 	}
