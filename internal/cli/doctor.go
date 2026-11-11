@@ -55,7 +55,9 @@ func (a *app) doctorCmd() *cobra.Command {
 With no tool names, every tool is checked. Exit code is 1 when something is missing.
 
 --install runs the suggested install commands. It asks before each one;
-pass --yes only after the user approved installing software.`,
+pass --yes only after the user approved installing software. Package
+managers can also upgrade other installed packages (brew upgrades
+dependencies and dependents), which can affect other programs.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := a.loadEnv()
 			if err != nil {
@@ -87,7 +89,8 @@ pass --yes only after the user approved installing software.`,
 							continue
 						}
 						done[r.Install.String()] = true
-						if err := a.confirm(yes, fmt.Sprintf("install %s with `%s`?", r.Bin, r.Install)); err != nil {
+						if err := a.confirm(yes, fmt.Sprintf("install %s with `%s`?\n  %s may also upgrade other installed packages.\nContinue?",
+							r.Bin, r.Install, r.Install.Manager)); err != nil {
 							if err == errNotConfirmed {
 								fmt.Fprintf(a.stderr, "skipped %s\n", r.Bin)
 								continue

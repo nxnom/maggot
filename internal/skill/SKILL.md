@@ -34,7 +34,9 @@ folder is (`maggot toolbox add <path>`) or create one (`maggot toolbox init <pat
    after the user agrees to install software.
 4. `maggot run <tool> -- <args>` — everything after `--` goes to the tool
    unchanged (tool flags must come after `--`); the exit code is the tool's. Alternative: `maggot run <tool> --inputs '{"name": value}'`.
-   Run from the user's project folder so relative paths work.
+   Run from the user's project folder so relative paths work. Input defaults
+   from `maggot info` apply only with `--inputs`; with raw args, pass what
+   you need yourself (entry.args are always added).
 
 If a tool almost fits, prefer improving it (new flag, bump version) over writing
 a second similar tool.

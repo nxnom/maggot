@@ -367,7 +367,8 @@ async function checkHealth(tool, el) {
     const btn = h("button", { class: "btn small", type: "button" }, "Install");
     btn.addEventListener("click", async () => {
       if (cmd.startsWith("sudo ")) { navigator.clipboard.writeText(cmd); return toast("This needs sudo. The command is copied; run it in a terminal."); }
-      if (!(await confirmDialog(`Install ${r.bin}?`, h("div", null, h("p", null, "maggot will run:"), h("pre", { class: "cmd" }, cmd)), "Install"))) return;
+      if (!(await confirmDialog(`Install ${r.bin}?`, h("div", null, h("p", null, "maggot will run:"), h("pre", { class: "cmd" }, cmd),
+        h("p", null, `${r.install.manager} may also upgrade other installed packages, which can affect other programs on this computer.`)), "Install"))) return;
       btn.disabled = true; btn.textContent = "Installing…";
       try {
         const res = await post("/api/tool/install", { ref: tool.ref, bin: r.bin });

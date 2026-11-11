@@ -87,7 +87,7 @@ Unknown fields are errors. The fields are:
 | `entry.path` | one of path/bin | entry file, relative, forward slashes |
 | `entry.bin` | one of path/bin | a program on PATH, for manifest-only tools (checked like a requirement) |
 | `entry.interpreter` | no | with `path` only: argv prefix, e.g. `["uv","run","--script"]`, `["deno","run","-A"]`, `["sh"]`. Without it, `entry.path` must be executable. Set it even when the file has a shebang so the tool also runs on Windows. |
-| `entry.args` | no | fixed args placed before the user's args, e.g. `["--newline", "-o", "%(title)s.%(ext)s"]`. Many programs let a later flag win, so these work as overridable defaults. |
+| `entry.args` | no | fixed args placed before the user's args, e.g. `["--newline", "-o", "%(title)s.%(ext)s"]`. Always sent, also with raw args. See "Defaults" below. |
 | `requires[]` | no | binaries needed on PATH. `version` is a semver constraint (`>=7`, `^1.2`, `~3.1`). `check` are the args that print the version (default `["--version"]`). `install` maps a package manager to a package name. |
 | `env[]` | no | env vars the tool reads. `secret: true` values are stored by `maggot secret set` outside the toolbox and passed at run time. `required: true` blocks `maggot run` when the value is missing. Names starting with `MAGGOT_` are reserved. |
 | `inputs[]` | no | describe args so the web UI can build a form and `--inputs` JSON works. Tools without inputs still run with raw args. |
@@ -138,6 +138,24 @@ How a value becomes argv (`arg`):
 maggot builds argv in this order: `entry.args`, flags and option/boolean args
 (manifest order), `outputs.dir_flag`, `args` inputs, then positionals. A
 missing value uses `default`; when there is no default, nothing is sent.
+
+### Defaults: entry.args vs input defaults
+
+- `entry.args` are sent on every run, including `maggot run <tool> -- <raw args>`.
+- Input `default`s are used only when values come through `--inputs` or the
+  web UI. With raw args after `--`, the caller's args are the whole story.
+
+So put anything that must always apply (a safe output template, a format
+choice that avoids a known bug) in `entry.args`, and use input defaults for
+form convenience.
+
+`entry.args` work as overridable defaults only if the program lets a later
+copy of a flag replace the earlier one. Many programs do ("last wins"), but
+not all: some add values together, some reject repeats, and some treat a
+repeated flag differently per flag (yt-dlp: `-f` is last-wins, `-S` adds to
+the sort order). Check the program's docs for every flag you put in
+`entry.args` that callers might also pass, and say in the README which
+defaults can be overridden.
 
 Optional per input: `label`, `description`, `required`, `default`, and form
 hints that do not change argv: `placeholder`, `group` (section title, e.g.

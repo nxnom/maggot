@@ -147,7 +147,7 @@ func (a *app) infoCmd() *cobra.Command {
 				}
 			}
 			if len(m.Inputs) > 0 {
-				fmt.Fprintln(a.stdout, "\ninputs:")
+				fmt.Fprintln(a.stdout, "\ninputs (defaults apply with --inputs and the web UI, not to raw args after --):")
 				w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 				for _, in := range m.Inputs {
 					how := argSummary(in)
