@@ -304,6 +304,14 @@ async function toolPage(spec) {
       } }, "Delete")));
 
   const reqs = h("div", { class: "reqs", "aria-label": "Requirements" }, h("span", { class: "req wait" }, "Checking requirements…"));
+  const warmBox = m.warm ? h("div", { class: "warm-box" }) : null;
+  let warmTimer = null;
+  if (warmBox) {
+    renderWarm(tool, warmBox, tool.warm);
+    warmTimer = setInterval(async () => {
+      try { renderWarm(tool, warmBox, await get(`/api/tool/warm?ref=${q(tool.ref)}`)); } catch { /* page left */ }
+    }, 10000);
+  }
   const secrets = h("div");
 
   // form + command line
@@ -456,10 +464,10 @@ async function toolPage(spec) {
     plate,
     draft ? draftNote(draft, m) : null,
     h("p", { class: "lede" }, m.description),
-    reqs, secrets,
+    reqs, warmBox, secrets,
     h("div", { class: "work" }, formEl, h("div", { class: "stack" }, runView.el, historyPanel)),
     about);
-  page = { cleanup: () => runView.stop() };
+  page = { cleanup: () => { runView.stop(); clearInterval(warmTimer); } };
 
   const params = new URLSearchParams(query || "");
   const runParam = params.get("run");
@@ -468,6 +476,42 @@ async function toolPage(spec) {
   if (runParam) runView.show(runParam).catch(() => {});
   renderSecrets(tool, secrets);
   checkHealth(tool, reqs);
+}
+
+// renderWarm shows whether a slow-loading tool is kept in memory, with
+// buttons to warm it for a while or stop it.
+function renderWarm(tool, el, info) {
+  const st = info && info.status;
+  if (st && st.running) {
+    const mins = Math.max(1, Math.round(st.idle_left / 60));
+    const stop = h("button", { class: "btn small", type: "button" }, "Stop");
+    stop.addEventListener("click", async () => {
+      stop.disabled = true;
+      try { renderWarm(tool, el, await del(`/api/tool/warm?ref=${q(tool.ref)}`)); toast("Stopped. Memory is free again."); } catch (e) { toast(e.message, true); stop.disabled = false; }
+    });
+    return clear(el,
+      h("span", { class: "req warm-on" }, `Warm: runs start fast`),
+      h("span", { class: "muted" }, `${st.jobs} job${st.jobs === 1 ? "" : "s"}, stops after ${mins} min without a job`),
+      stop);
+  }
+  if (st) {
+    return clear(el, h("span", { class: "req wait" }, "Loading into memory…"));
+  }
+  const dur = h("select", { class: "select small-select", "aria-label": "Keep warm for" },
+    [["10m", "10 min"], ["30m", "30 min"], ["1h", "1 hour"], ["2h", "2 hours"]].map(([v, l]) => h("option", { value: v }, l)));
+  const go = h("button", { class: "btn small", type: "button" }, "Keep warm");
+  go.addEventListener("click", async () => {
+    go.disabled = true;
+    go.textContent = "Loading…";
+    clear(el, h("span", { class: "req wait" }, "Loading into memory…"), go);
+    try {
+      renderWarm(tool, el, await post("/api/tool/warm", { ref: tool.ref, for: dur.value }));
+      toast(`${tool.manifest.name} is warm.`);
+    } catch (e) { toast(e.message, true); renderWarm(tool, el, null); }
+  });
+  clear(el,
+    h("span", { class: "req wait" }, "Cold: loads on every run"),
+    h("span", { class: "muted" }, "Keep it in memory for"), dur, go);
 }
 
 async function openTool(tool) {

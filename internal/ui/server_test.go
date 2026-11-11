@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,8 +18,10 @@ import (
 
 	"github.com/nxnom/maggot/internal/doctor"
 	"github.com/nxnom/maggot/internal/pack"
+	"github.com/nxnom/maggot/internal/scaffold"
 	"github.com/nxnom/maggot/internal/secrets"
 	"github.com/nxnom/maggot/internal/toolbox"
+	"github.com/nxnom/maggot/internal/warm"
 )
 
 type testServer struct {
@@ -537,4 +540,49 @@ func TestToolFilesViewer(t *testing.T) {
 	if len(ts.opened) == 0 || ts.opened[len(ts.opened)-1] != dir {
 		t.Fatalf("open folder: %v", ts.opened)
 	}
+}
+
+func TestWarmOverHTTP(t *testing.T) {
+	if _, err := exec.LookPath("uv"); err != nil {
+		t.Skip("uv not installed")
+	}
+	ts := newTestServer(t)
+	if _, err := scaffold.Create(filepath.Join(ts.tb, "tools"), scaffold.Options{ID: "warmui", Lang: "python", Warm: true}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { warm.Stop("warmui") })
+	var info struct {
+		Supported bool
+		Status    *warm.Status
+	}
+	ts.do(t, "GET", "/api/tool/warm?ref=warmui", nil, 200, &info)
+	if !info.Supported || info.Status != nil {
+		t.Fatalf("cold: %+v", info)
+	}
+	ts.do(t, "POST", "/api/tool/warm", map[string]any{"ref": "warmui", "for": "30s"}, 400, nil)
+	ts.do(t, "POST", "/api/tool/warm", map[string]any{"ref": "warmui", "for": "5m"}, 200, &info)
+	if info.Status == nil || !info.Status.Running {
+		t.Fatalf("warm: %+v", info)
+	}
+	// A UI run goes through the warm process.
+	in := filepath.Join(t.TempDir(), "n.txt")
+	os.WriteFile(in, []byte("x"), 0o644)
+	var meta RunMeta
+	ts.do(t, "POST", "/api/runs", map[string]any{"ref": "warmui", "values": map[string]any{"files": []string{in}, "upper": true}}, 200, &meta)
+	if r, _ := ts.s.runs.Active(meta.ID); r != nil {
+		<-r.Done()
+	}
+	ts.do(t, "GET", "/api/tool/warm?ref=warmui", nil, 200, &info)
+	if info.Status == nil || info.Status.Jobs != 1 {
+		t.Fatalf("job should go to the warm process: %+v", info.Status)
+	}
+	if b, _ := os.ReadFile(filepath.Join(meta.OutDir, "n.out.txt")); string(b) != "X" {
+		t.Fatalf("output: %q", b)
+	}
+	info.Status = nil // the response has no "status" when the tool is cold
+	ts.do(t, "DELETE", "/api/tool/warm?ref=warmui", nil, 200, &info)
+	if info.Status != nil {
+		t.Fatalf("stopped: %+v", info)
+	}
+	ts.do(t, "POST", "/api/tool/warm", map[string]any{"ref": "worker"}, 400, nil)
 }

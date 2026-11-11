@@ -180,6 +180,9 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/tool/files", s.apiToolFiles)
 	api("GET /api/tool/file", s.apiToolFile)
 	api("POST /api/tool/open", s.apiOpenTool)
+	api("GET /api/tool/warm", s.apiWarmStatus)
+	api("POST /api/tool/warm", s.apiWarmStart)
+	api("DELETE /api/tool/warm", s.apiWarmStop)
 	api("DELETE /api/drafts", s.apiRemoveDraft)
 
 	return s.checkHost(mux)

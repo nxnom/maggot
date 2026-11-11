@@ -104,6 +104,15 @@ Pass the folder with the tool's output flag (`outputs.dir_flag` in
    files into place and deletes the run, so no copy is left. Rejected:
    `maggot runs rm <run-id>`. The user can also move or delete them in the UI.
 
+## Slow tools
+
+If `maggot info` shows `warm` and you will run the tool several times soon
+(or the user asks), run `maggot warm <tool> --for 15m` first, so it loads
+once instead of on every run. Tell the user it keeps memory (often GPU memory)
+in use, and run `maggot warm stop <tool>` when you are done. Do not warm a
+tool for a single run. When building a tool whose runs are mostly loading a
+model, use `maggot new <id> --lang python --warm`.
+
 ## Leave no copies behind
 
 - Run tools with their output flag pointing straight at where the result is

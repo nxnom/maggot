@@ -187,6 +187,10 @@ a { color: var(--green); }
 .req.bad { border-color: var(--red); color: var(--red); }
 .req.bad::before { background: var(--red); }
 .req.wait::before { background: var(--line-2); }
+.req.warm-on { border-color: var(--brass); }
+.req.warm-on::before { background: var(--brass); }
+.warm-box { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; font-size: 13.5px; }
+.small-select { width: auto; padding: 4px 8px; font-size: 13px; }
 
 /* ---------- work area ---------- */
 .work { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 28px; margin-top: 26px; align-items: start; }

@@ -214,6 +214,35 @@ object per line. The web UI uses these to show progress and results.
 
 Ignore the variable when it is not set. Never fail because of it.
 
+## Warm tools (slow loading)
+
+When most of a run is loading something (a model, a large index), let the
+tool stay loaded between runs. Declare it in `tool.json`:
+
+    "warm": {"args": ["--serve"]}
+
+- `maggot warm <tool> --for 30m` (or "Keep warm" in the web UI) starts
+  `<entry> --serve` in the background with `MAGGOT_WARM_SOCKET` (a Unix socket
+  path) and `MAGGOT_WARM_IDLE` (seconds). The tool loads once, serves jobs on
+  the socket, and exits after that many seconds without a job.
+- Every run gets `MAGGOT_WARM_SOCKET`. If a warm process answers there, the
+  run sends its job to it and prints what it returns; otherwise it runs cold
+  (loads and runs in its own process). So the tool still works without
+  maggot and without a warm process.
+- Python: `maggot new <id> --lang python --warm` adds `maggot_warm.py` (no
+  dependencies). Put the slow part in `load()` and one run in
+  `handle(argv, state)`; `maggot_warm.main(load, handle)` does the rest.
+- Tests run cold (no warm process), so they also cover the normal path.
+
+Socket protocol, one JSON object per line, for other languages:
+
+    → {"type":"status"}
+    ← {"ok":true,"idle_left":540,"jobs":3,"busy":false}
+    → {"type":"run","argv":[...],"cwd":"/abs/path","env":{"MAGGOT_EVENTS":"..."}}
+    ← {"out":"text"} and {"err":"text"} as the job prints, then {"exit":0}
+
+Run jobs one at a time, in the job's `cwd`, with the job's `env`.
+
 ## Dependencies
 
 Keep the tool standalone, and add no runtime it does not need:
