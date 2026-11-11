@@ -52,6 +52,14 @@ func (m *Manifest) Validate() error {
 		}
 		seen[k] = true
 	}
+	if len(m.Tags) > 30 {
+		v.add("tags", "max 30 tags")
+	}
+	for i, tag := range m.Tags {
+		if strings.TrimSpace(tag) == "" || len(tag) > 40 {
+			v.add(fmt.Sprintf("tags[%d]", i), "must be 1-40 chars")
+		}
+	}
 	v.entry(m.Entry)
 	v.requires(m.Requires)
 	v.env(m.Env)

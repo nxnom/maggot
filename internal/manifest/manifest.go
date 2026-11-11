@@ -23,19 +23,21 @@ const FileName = "tool.json"
 const SchemaVersion = 1
 
 type Manifest struct {
-	Schema      int           `json:"schema"`
-	ID          string        `json:"id"`
-	Version     string        `json:"version"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	Categories  []string      `json:"categories,omitempty"`
-	Icon        string        `json:"icon,omitempty"`
-	Entry       Entry         `json:"entry"`
-	Requires    []Requirement `json:"requires,omitempty"`
-	Env         []EnvVar      `json:"env,omitempty"`
-	Inputs      []Input       `json:"inputs,omitempty"`
-	Outputs     *Outputs      `json:"outputs,omitempty"`
-	Examples    []string      `json:"examples,omitempty"`
+	Schema      int      `json:"schema"`
+	ID          string   `json:"id"`
+	Version     string   `json:"version"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Categories  []string `json:"categories,omitempty"`
+	// Tags are extra search words (synonyms, formats, library names).
+	Tags     []string      `json:"tags,omitempty"`
+	Icon     string        `json:"icon,omitempty"`
+	Entry    Entry         `json:"entry"`
+	Requires []Requirement `json:"requires,omitempty"`
+	Env      []EnvVar      `json:"env,omitempty"`
+	Inputs   []Input       `json:"inputs,omitempty"`
+	Outputs  *Outputs      `json:"outputs,omitempty"`
+	Examples []string      `json:"examples,omitempty"`
 }
 
 // Entry is the program to start. Path is relative to the tool folder.

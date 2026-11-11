@@ -16,6 +16,7 @@ const validJSON = `{
   "name": "Image Resize",
   "description": "Resize images.",
   "categories": ["Images"],
+  "tags": ["resize", "thumbnail"],
   "entry": {"path": "run.py", "interpreter": ["uv", "run", "--script"]},
   "requires": [
     {"bin": "uv", "version": ">=0.5", "install": {"brew": "uv"}},
@@ -74,6 +75,7 @@ func TestParseInvalid(t *testing.T) {
 		{"id", func(m map[string]any) { m["id"] = "Image_Resize" }, "id: must be lowercase"},
 		{"version", func(m map[string]any) { m["version"] = "1.2" }, "version: must be semver"},
 		{"name", func(m map[string]any) { m["name"] = " " }, "name: is required"},
+		{"empty tag", func(m map[string]any) { m["tags"] = []any{""} }, "tags[0]"},
 		{"unknown field", func(m map[string]any) { m["colour"] = "red" }, "unknown field"},
 		{"dup category", func(m map[string]any) { m["categories"] = []any{"A", "a"} }, "duplicate"},
 		{"entry escape", func(m map[string]any) { m["entry"] = map[string]any{"path": "../x"} }, "entry.path"},

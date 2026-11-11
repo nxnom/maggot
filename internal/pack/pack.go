@@ -28,7 +28,7 @@ const IgnoreFile = ".maggotignore"
 
 // Limits for archives being imported.
 var (
-	MaxFiles      = 20000
+	MaxFiles            = 20000
 	MaxTotalBytes int64 = 2 << 30 // 2 GiB uncompressed
 )
 
