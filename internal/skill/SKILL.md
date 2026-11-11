@@ -76,6 +76,23 @@ If a tool almost fits, improve it instead of writing a second similar tool:
    They run it there and import it with one click when they are happy. Only
    if the user tells you to import it, run `maggot import <dir> --yes`.
 
+## Let the user review results first
+
+When the user should see a result before it lands in the project (generated
+images, videos, documents, anything they may reject), and the tool has an
+output folder flag:
+
+1. `maggot run <tool> --review -- <args>` (leave out the tool's output flag).
+   The files are held in a run folder; maggot prints the run id and a web UI
+   link where the user can look at them.
+2. Ask the user to check them (give the link, or `maggot ui`).
+3. Approved: `maggot take <run-id> <destination folder> [file...]` moves the
+   files into place and deletes the run, so no copy is left. Rejected:
+   `maggot runs rm <run-id>`. The user can also move or delete them in the UI.
+
+For simple jobs where the result is not in doubt (convert this file), write
+straight to the destination instead.
+
 ## Leave no copies behind
 
 - Run tools with their output flag pointing straight at where the result is

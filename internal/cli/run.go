@@ -17,7 +17,7 @@ import (
 
 func (a *app) runCmd() *cobra.Command {
 	var inputs, outDir, events string
-	var skipChecks, dryRun bool
+	var skipChecks, dryRun, review bool
 	cmd := &cobra.Command{
 		Use:   "run <tool> [maggot flags] [-- tool args...]",
 		Short: "Run a tool (a thin wrapper; the tool also runs without maggot)",
@@ -45,6 +45,26 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 			}
 			// Plain words before "--" (e.g. "maggot run hello world") also go to the tool.
 			toolArgs := args[1:]
+			if review {
+				if outDir != "" || dryRun {
+					return errors.New("--review cannot be used with --out or --dry-run")
+				}
+				if !skipChecks {
+					if err := a.preflight(t); err != nil {
+						return err
+					}
+				}
+				var values map[string]any
+				if inputs != "" {
+					if len(toolArgs) > 0 {
+						return errors.New("use either --inputs or raw tool args, not both")
+					}
+					if values, err = readInputs(inputs); err != nil {
+						return err
+					}
+				}
+				return a.runReview(t, toolArgs, values)
+			}
 			if inputs != "" {
 				if len(toolArgs) > 0 {
 					return errors.New("use either --inputs or raw tool args, not both")
@@ -82,13 +102,14 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 	f.StringVar(&events, "events", "", "file the tool may append NDJSON events to (sets MAGGOT_EVENTS)")
 	f.BoolVar(&skipChecks, "skip-checks", false, "do not check binaries and env before starting")
 	f.BoolVar(&dryRun, "dry-run", false, "print the command instead of running it")
+	f.BoolVar(&review, "review", false, "hold output files in a run folder for the user to review (see 'maggot take')")
 	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
 		return fmt.Errorf("%w\n(tool flags go after \"--\": maggot run <tool> -- --flag value)", err)
 	})
 	return cmd
 }
 
-func argsFromInputs(t *toolbox.Tool, raw, outDir string) ([]string, error) {
+func readInputs(raw string) (map[string]any, error) {
 	data := []byte(raw)
 	if strings.HasPrefix(raw, "@") {
 		b, err := os.ReadFile(raw[1:])
@@ -100,6 +121,14 @@ func argsFromInputs(t *toolbox.Tool, raw, outDir string) ([]string, error) {
 	var values map[string]any
 	if err := json.Unmarshal(data, &values); err != nil {
 		return nil, fmt.Errorf("--inputs must be a JSON object: %w", err)
+	}
+	return values, nil
+}
+
+func argsFromInputs(t *toolbox.Tool, raw, outDir string) ([]string, error) {
+	values, err := readInputs(raw)
+	if err != nil {
+		return nil, err
 	}
 	return runner.BuildArgs(t.Manifest, values, outDir)
 }

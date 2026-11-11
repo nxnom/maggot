@@ -1,13 +1,15 @@
 // The run panel: live status, progress, output lines, result files.
-import { h, clear, bytes, duration, toast } from "./dom.js";
+import { h, clear, bytes, duration, toast, confirmDialog } from "./dom.js";
 import { get, post, fileURL } from "./api.js";
+import { pick } from "./picker.js";
 
 const MAX_LINES = 2000;
 
 export class RunView {
-  constructor({ onFinish, onReuse }) {
+  constructor({ onFinish, onReuse, onTaken }) {
     this.onFinish = onFinish;
     this.onReuse = onReuse;
+    this.onTaken = onTaken;
     this.source = null;
     this.el = h("section", { class: "panel", "aria-label": "Run" });
     this.idle();
@@ -113,7 +115,7 @@ export class RunView {
     const label = { running: "Running", succeeded: "Done", failed: "Failed", cancelled: "Cancelled" }[meta.status] || meta.status;
     status.className = "status " + meta.status;
     status.textContent = meta.status === "failed" && meta.exit_code !== undefined ? `Failed (exit ${meta.exit_code})` : label;
-    cancel.hidden = meta.status !== "running";
+    cancel.hidden = meta.status !== "running" || meta.origin === "cli";
     time.textContent = duration(meta.started, meta.ended);
     if (meta.status !== "running") {
       if (meta.progress >= 0) this.setProgress(meta.status === "succeeded" ? 1 : meta.progress);
@@ -140,8 +142,16 @@ export class RunView {
         h("button", { class: "btn small", type: "button", style: "margin-top:8px", onclick: () => navigator.clipboard.writeText(text).then(() => toast("Copied.")) }, "Copy result"));
     }
     if (detail.outputs.length) {
-      items.push(h("h3", { style: "font-size:14px;margin:16px 0 0" },
-        `${detail.outputs.length} file${detail.outputs.length === 1 ? "" : "s"}`),
+      const n = detail.outputs.length;
+      const move = h("button", { class: "btn small green", type: "button" }, "Move files to…");
+      move.addEventListener("click", () => this.take(id, n));
+      if (detail.run.review && detail.run.status === "succeeded") {
+        items.push(h("div", { class: "review-note" },
+          h("strong", null, "Waiting for your review. "),
+          "The agent will move these files into place when you approve. To reject them, delete this run."));
+      }
+      items.push(h("div", { class: "row", style: "margin:16px 0 0;justify-content:space-between;flex-wrap:wrap" },
+        h("h3", { style: "font-size:14px;margin:0" }, `${n} file${n === 1 ? "" : "s"}`), move),
         h("div", { class: "outputs" }, detail.outputs.slice(0, 60).map((f) => outputCard(id, f))));
     } else if (detail.run.status === "succeeded" && !items.length && this.lines === 0) {
       items.push(h("p", { class: "muted" }, "Finished with no output."));
@@ -149,6 +159,29 @@ export class RunView {
     clear(results, items);
   }
 }
+
+// take moves the run's files into a folder the user picks, then the run is gone.
+RunView.prototype.take = async function (id, n) {
+  const dest = await pick({ mode: "dir", title: "Move the files into this folder" });
+  if (!dest) return;
+  if (!(await confirmDialog(`Move ${n} file${n === 1 ? "" : "s"}?`,
+    h("div", null, h("p", null, "The files are moved into:"), h("p", null, h("code", null, dest)),
+      h("p", null, "The run is deleted afterwards, so no copy is left behind.")), "Move files"))) return;
+  let res;
+  try {
+    res = await post(`/api/runs/${id}/take`, { dest });
+  } catch (err) {
+    if (err.status !== 409) return toast(err.message, true);
+    const list = err.data.conflicts || [];
+    if (!(await confirmDialog("Replace existing files?",
+      h("div", null, h("p", null, "These files already exist in the folder:"), h("ul", null, list.map((f) => h("li", null, h("code", null, f))))),
+      "Replace", true))) return;
+    try { res = await post(`/api/runs/${id}/take`, { dest, overwrite: true }); } catch (e2) { return toast(e2.message, true); }
+  }
+  toast(`Moved ${res.moved.length} file${res.moved.length === 1 ? "" : "s"}.`);
+  this.idle();
+  if (this.onTaken) this.onTaken();
+};
 
 function outputCard(runId, f) {
   const url = fileURL(runId, f.path);

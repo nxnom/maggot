@@ -355,6 +355,7 @@ async function toolPage(spec) {
   const runView = new RunView({
     onFinish: (meta) => { loadHistory(meta.id); toast(meta.status === "succeeded" ? `${m.name} finished.` : `${m.name}: ${meta.status}.`, meta.status !== "succeeded"); },
     onReuse: (values) => { form.set(values); toast("Form filled from this run."); },
+    onTaken: () => loadHistory(),
   });
 
   async function loadHistory(activeId) {

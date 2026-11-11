@@ -12,6 +12,15 @@ import (
 // tool and everything it started (yt-dlp → ffmpeg).
 func setGroup(c *exec.Cmd) { c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
 
+// processAlive reports whether a process with this pid exists.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || err == syscall.EPERM
+}
+
 // stopGroup sends SIGTERM to the group, then SIGKILL if it is still running.
 func stopGroup(c *exec.Cmd, done <-chan struct{}) {
 	if c.Process == nil {

@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -200,5 +202,72 @@ func TestStopAll(t *testing.T) {
 	m.StopAll(5 * time.Second)
 	if meta := r.Meta(); meta.Status != StatusCancelled {
 		t.Fatalf("status %s", meta.Status)
+	}
+}
+
+func TestTake(t *testing.T) {
+	tool := makeTool(t, workerManifest, workerScript)
+	m := NewManager(t.TempDir(), 10)
+	start := func() RunMeta {
+		r, err := m.StartWith(tool, StartOptions{Args: []string{"ann"}, Review: true, Origin: "cli", Cwd: t.TempDir()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return waitRun(t, r)
+	}
+	meta := start()
+	if !meta.Review || meta.Origin != "cli" || meta.Status != StatusSucceeded {
+		t.Fatalf("meta: %+v", meta)
+	}
+	// The out folder flag was added in front of the raw args.
+	if meta.Argv[1] != "--out" || meta.Argv[2] != meta.OutDir {
+		t.Fatalf("argv: %q", meta.Argv)
+	}
+	dest := t.TempDir()
+	moved, err := m.Take(meta.ID, dest, nil, false)
+	if err != nil || len(moved) != 2 {
+		t.Fatalf("take: %v %v", moved, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dest, "ann.txt")); string(b) != "hello ann\n" {
+		t.Fatal("file not moved")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "sub", "n.txt")); err != nil {
+		t.Fatal("sub folders should be kept")
+	}
+	if _, err := m.Get(meta.ID); err == nil {
+		t.Fatal("run should be deleted after take")
+	}
+
+	// Conflicts are refused unless overwrite; a subset can be taken.
+	meta = start()
+	_, err = m.Take(meta.ID, dest, nil, false)
+	var ce *ConflictError
+	if !errors.As(err, &ce) || len(ce.Files) != 2 {
+		t.Fatalf("conflict: %v", err)
+	}
+	if _, err := m.Take(meta.ID, dest, []string{"nope.txt"}, false); err == nil {
+		t.Fatal("unknown file should fail")
+	}
+	moved, err = m.Take(meta.ID, dest, []string{"ann.txt"}, true)
+	if err != nil || len(moved) != 1 {
+		t.Fatalf("subset overwrite: %v %v", moved, err)
+	}
+}
+
+func TestRunOwnedByOtherProcess(t *testing.T) {
+	m := NewManager(t.TempDir(), 10)
+	dir := filepath.Join(m.Root, "20260101-000000-abcdef")
+	os.MkdirAll(dir, 0o755)
+	write := func(pid int) {
+		b, _ := json.Marshal(RunMeta{ID: "20260101-000000-abcdef", Status: StatusRunning, PID: pid, Started: time.Now()})
+		os.WriteFile(filepath.Join(dir, "run.json"), b, 0o644)
+	}
+	write(os.Getpid()) // alive
+	if meta, _ := m.Get("20260101-000000-abcdef"); meta.Status != StatusRunning {
+		t.Fatalf("live run should stay running: %s", meta.Status)
+	}
+	write(999999) // gone
+	if meta, _ := m.Get("20260101-000000-abcdef"); meta.Status != StatusFailed {
+		t.Fatalf("dead run should be failed: %s", meta.Status)
 	}
 }

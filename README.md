@@ -56,6 +56,8 @@ maggot run text-upper -- --upper --out out notes.txt
 | `new <id> --lang bin\|sh\|python\|deno` | scaffold a working tool with tests, in the drafts folder |
 | `draft <tool>` | copy an installed tool into the drafts folder to change it |
 | `try <folder>` | open a tool folder in the web UI to try it before importing |
+| `run <tool> --review -- …`, `take <run> <folder>` | hold output for review in the web UI, then move (not copy) the approved files into place |
+| `runs`, `runs rm <run>` | list or delete saved runs |
 | `clean [runs\|drafts\|uploads\|all]` | show or delete leftovers in the data folder (never toolboxes or projects) |
 | `test <dir\|tool>`, `test --all` | validate and run `tests/cases.json`; network and paid cases only run with `--network` / `--paid`. Results show in `list`, `info` and the UI |
 | `import <file\|dir>`, `export <tool>`, `pack <dir>`, `remove <tool>` | share tools as `.maggot` archives (zip files) |

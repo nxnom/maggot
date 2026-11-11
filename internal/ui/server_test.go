@@ -451,7 +451,9 @@ func TestDrafts(t *testing.T) {
 
 	// Edits show up at once (the manifest is re-read).
 	os.WriteFile(filepath.Join(elsewhere, "tool.json"), []byte(`{"schema":1,"id":"outside","version":"0.2.0","name":"Renamed","description":"d","entry":{"path":"run"}}`), 0o644)
-	var again struct{ Manifest struct{ Name, Version string } }
+	var again struct {
+		Manifest struct{ Name, Version string }
+	}
 	ts.do(t, "GET", "/api/tool?ref=try/outside", nil, 200, &again)
 	if again.Manifest.Name != "Renamed" {
 		t.Fatalf("not re-read: %+v", again)
@@ -473,4 +475,27 @@ func TestDrafts(t *testing.T) {
 	if len(state.Drafts) != 0 {
 		t.Fatalf("drafts left: %+v", state.Drafts)
 	}
+}
+
+func TestTakeOverHTTP(t *testing.T) {
+	ts := newTestServer(t)
+	var meta RunMeta
+	ts.do(t, "POST", "/api/runs", map[string]any{"ref": "worker", "values": map[string]any{"name": "pic"}}, 200, &meta)
+	if r, _ := ts.s.runs.Active(meta.ID); r != nil {
+		<-r.Done()
+	}
+	dest := t.TempDir()
+	os.WriteFile(filepath.Join(dest, "pic.txt"), []byte("old"), 0o644)
+	var conflict struct{ Conflicts []string }
+	ts.do(t, "POST", "/api/runs/"+meta.ID+"/take", map[string]any{"dest": dest}, 409, &conflict)
+	if len(conflict.Conflicts) != 1 || conflict.Conflicts[0] != "pic.txt" {
+		t.Fatalf("conflicts: %+v", conflict)
+	}
+	var res struct{ Moved []string }
+	ts.do(t, "POST", "/api/runs/"+meta.ID+"/take", map[string]any{"dest": dest, "overwrite": true}, 200, &res)
+	if len(res.Moved) != 2 {
+		t.Fatalf("moved: %+v", res)
+	}
+	ts.do(t, "GET", "/api/runs/"+meta.ID, nil, 404, nil)
+	ts.do(t, "POST", "/api/runs/"+meta.ID+"/take", map[string]any{"dest": ""}, 400, nil)
 }

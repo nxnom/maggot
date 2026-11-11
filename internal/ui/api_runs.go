@@ -81,6 +81,30 @@ func (s *Server) apiDeleteRuns(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]int{"deleted": s.runs.DeleteAll(tool)})
 }
 
+// apiTakeRun moves a run's output files into a folder and deletes the run.
+func (s *Server) apiTakeRun(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Dest      string   `json:"dest"`
+		Files     []string `json:"files"`
+		Overwrite bool     `json:"overwrite"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		return err
+	}
+	if strings.TrimSpace(req.Dest) == "" {
+		return errors.New("choose a destination folder")
+	}
+	moved, err := s.runs.Take(r.PathValue("id"), req.Dest, req.Files, req.Overwrite)
+	var ce *ConflictError
+	if errors.As(err, &ce) {
+		return &httpError{code: http.StatusConflict, msg: err.Error(), extra: map[string]any{"conflicts": ce.Files}}
+	}
+	if err != nil {
+		return err
+	}
+	return ok(w, map[string]any{"moved": moved})
+}
+
 func (s *Server) apiCancelRun(w http.ResponseWriter, r *http.Request) error {
 	if err := s.runs.Cancel(r.PathValue("id")); err != nil {
 		return err
@@ -119,8 +143,13 @@ func (s *Server) apiStream(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		log, _ := s.runs.Log(id)
 		start()
+		if meta.Status == StatusRunning {
+			// Run by another maggot process (e.g. `maggot run --review`):
+			// follow its log file until it ends.
+			return s.followFile(r, id, send, flusher)
+		}
+		log, _ := s.runs.Log(id)
 		for _, m := range log {
 			send(m)
 		}
@@ -162,6 +191,35 @@ func (s *Server) apiStream(w http.ResponseWriter, r *http.Request) error {
 		case <-ping.C:
 			fmt.Fprint(w, ": ping\n\n")
 			flusher.Flush()
+		case <-r.Context().Done():
+			return nil
+		}
+	}
+}
+
+// followFile streams a run that another process writes, by polling its log.
+func (s *Server) followFile(r *http.Request, id string, send func(Message), flusher http.Flusher) error {
+	sent := 0
+	tick := time.NewTicker(300 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		meta, err := s.runs.Get(id)
+		if err != nil {
+			return nil
+		}
+		log, _ := s.runs.Log(id)
+		for _, m := range log[min(sent, len(log)):] {
+			send(m)
+		}
+		sent = max(sent, len(log))
+		if meta.Status != StatusRunning {
+			send(Message{Type: "status", Status: &meta})
+			flusher.Flush()
+			return nil
+		}
+		flusher.Flush()
+		select {
+		case <-tick.C:
 		case <-r.Context().Done():
 			return nil
 		}

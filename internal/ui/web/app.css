@@ -289,6 +289,7 @@ details.advanced[open] > summary { margin-bottom: 10px; }
 .out-item .meta { padding: 8px 10px; font-size: 13px; }
 .out-item .meta .name { font-weight: 600; overflow-wrap: anywhere; }
 .out-item .meta .links { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+.review-note { margin: 14px 0 0; padding: 10px 12px; border-radius: 6px; border: 1.5px dashed var(--brass); font-size: 14px; }
 .stdout { margin: 12px 0 0; padding: 12px; background: var(--sunk); border-radius: 6px; border: 1px solid var(--line); overflow: auto; max-height: 420px; white-space: pre-wrap; word-break: break-word; }
 
 .history { list-style: none; margin: 0; padding: 0; }

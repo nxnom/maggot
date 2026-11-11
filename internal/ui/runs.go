@@ -49,10 +49,16 @@ type RunMeta struct {
 	OutputKind  string         `json:"output_kind,omitempty"`
 	Format      string         `json:"format,omitempty"`
 	Status      RunStatus      `json:"status"`
-	ExitCode    *int           `json:"exit_code,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	Started     time.Time      `json:"started"`
-	Ended       *time.Time     `json:"ended,omitempty"`
+	// Review marks a run whose files wait for the user's approval before an
+	// agent moves them into a project (`maggot run --review`).
+	Review bool `json:"review,omitempty"`
+	// Origin is "ui" or "cli"; PID is the process that runs the tool.
+	Origin   string     `json:"origin,omitempty"`
+	PID      int        `json:"pid,omitempty"`
+	ExitCode *int       `json:"exit_code,omitempty"`
+	Error    string     `json:"error,omitempty"`
+	Started  time.Time  `json:"started"`
+	Ended    *time.Time `json:"ended,omitempty"`
 	// Progress is 0..1, or -1 when the tool reports none.
 	Progress float64 `json:"progress"`
 }
@@ -106,9 +112,13 @@ func (r *Run) publish(m Message) {
 	defer r.mu.Unlock()
 	r.seq++
 	m.Seq = r.seq
-	if m.Type == "out" || m.Type == "err" {
-		if r.logFile != nil {
+	if r.logFile != nil {
+		switch m.Type {
+		case "out", "err":
 			b, _ := json.Marshal(map[string]string{"t": m.Type, "s": m.Text})
+			r.logFile.Write(append(b, '\n'))
+		case "progress":
+			b, _ := json.Marshal(map[string]any{"t": "p", "v": m.Value})
 			r.logFile.Write(append(b, '\n'))
 		}
 	}
@@ -169,23 +179,62 @@ func newRunID() string {
 // Start validates values, creates the run folder and starts the tool.
 // The tool runs inside <run>/out, which is also passed as outputs.dir_flag.
 func (m *Manager) Start(t *toolbox.Tool, values map[string]any, extraEnv []string) (*Run, error) {
+	return m.StartWith(t, StartOptions{Values: values, ExtraEnv: extraEnv, Origin: "ui"})
+}
+
+// StartOptions control a run.
+type StartOptions struct {
+	// Values are input values (turned into args with the manifest). Ignored
+	// when Args is not nil.
+	Values map[string]any
+	// Args are raw tool args. The output folder flag is added in front unless
+	// the args already contain it.
+	Args     []string
+	ExtraEnv []string
+	// Cwd is the working directory; empty means the run's out folder.
+	Cwd    string
+	Review bool
+	Origin string
+}
+
+// StartWith creates the run folder and starts the tool. Output goes to
+// <run>/out through outputs.dir_flag.
+func (m *Manager) StartWith(t *toolbox.Tool, o StartOptions) (*Run, error) {
 	man := t.Manifest
 	id := newRunID()
 	dir := filepath.Join(m.Root, id)
 	out := filepath.Join(dir, "out")
-	outFlagDir := ""
-	if man.Outputs != nil && man.Outputs.DirFlag != "" {
-		outFlagDir = out
+	dirFlag := ""
+	if man.Outputs != nil {
+		dirFlag = man.Outputs.DirFlag
 	}
-	args, err := runner.BuildArgs(man, values, outFlagDir)
-	if err != nil {
-		return nil, err
+	var args []string
+	if o.Args != nil {
+		args = o.Args
+		if dirFlag != "" && !hasFlag(args, dirFlag) {
+			args = append([]string{dirFlag, out}, args...)
+		}
+	} else {
+		outFlagDir := ""
+		if dirFlag != "" {
+			outFlagDir = out
+		}
+		var err error
+		if args, err = runner.BuildArgs(man, o.Values, outFlagDir); err != nil {
+			return nil, err
+		}
 	}
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return nil, err
 	}
+	cwd := o.Cwd
+	if cwd == "" {
+		cwd = out
+	}
+	values := o.Values
+	extraEnv := o.ExtraEnv
 	cmd, err := runner.Command(t.Dir, man, args, runner.Options{
-		Dir: out, ExtraEnv: extraEnv, EventsPath: filepath.Join(dir, "events.ndjson"),
+		Dir: cwd, ExtraEnv: extraEnv, EventsPath: filepath.Join(dir, "events.ndjson"),
 	})
 	if err != nil {
 		return nil, err
@@ -195,7 +244,7 @@ func (m *Manager) Start(t *toolbox.Tool, values map[string]any, extraEnv []strin
 		meta: RunMeta{
 			ID: id, Ref: t.Ref(), ToolID: man.ID, ToolName: man.Name, ToolVersion: man.Version,
 			Values: values, Argv: cmd.Args, Dir: dir, OutDir: out, Status: StatusRunning,
-			Started: time.Now(), Progress: -1,
+			Started: time.Now(), Progress: -1, Review: o.Review, Origin: o.Origin, PID: os.Getpid(),
 		},
 		subs: map[chan Message]struct{}{},
 		cmd:  cmd,
@@ -444,9 +493,11 @@ func (m *Manager) Get(id string) (RunMeta, error) {
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return RunMeta{}, err
 	}
-	if meta.Status == StatusRunning { // maggot ui stopped while it ran
+	// A run still marked running belongs to another maggot process (a CLI
+	// review run, or another UI). If that process is gone, the run died.
+	if meta.Status == StatusRunning && !processAlive(meta.PID) {
 		meta.Status = StatusFailed
-		meta.Error = "maggot ui stopped while the run was active"
+		meta.Error = "maggot stopped while the run was active"
 	}
 	meta.Dir = filepath.Join(m.Root, id) // trust the location, not the file
 	meta.OutDir = filepath.Join(meta.Dir, "out")
@@ -488,8 +539,16 @@ func (m *Manager) Log(id string) ([]Message, error) {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	for sc.Scan() {
-		var l struct{ T, S string }
-		if json.Unmarshal(sc.Bytes(), &l) == nil {
+		var l struct {
+			T, S string
+			V    float64
+		}
+		if json.Unmarshal(sc.Bytes(), &l) != nil {
+			continue
+		}
+		if l.T == "p" {
+			out = append(out, Message{Seq: len(out) + 1, Type: "progress", Value: l.V})
+		} else {
 			out = append(out, Message{Seq: len(out) + 1, Type: l.T, Text: l.S})
 		}
 	}
@@ -572,6 +631,116 @@ func (m *Manager) prune(toolID string) {
 			os.RemoveAll(filepath.Join(m.Root, r.ID))
 		}
 	}
+}
+
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag || strings.HasPrefix(a, flag+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+// Take moves a finished run's output files into dest (keeping sub folders)
+// and deletes the run, so only one copy remains. files limits it to some
+// outputs (paths as listed by Outputs). Existing files in dest are not
+// replaced unless overwrite is set.
+func (m *Manager) Take(id, dest string, files []string, overwrite bool) ([]string, error) {
+	meta, err := m.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if meta.Status == StatusRunning {
+		return nil, errors.New("the run is still active")
+	}
+	outputs := m.Outputs(meta)
+	var pick []string
+	if len(files) == 0 {
+		for _, o := range outputs {
+			pick = append(pick, o.Path)
+		}
+	} else {
+		have := map[string]bool{}
+		for _, o := range outputs {
+			have[o.Path] = true
+		}
+		for _, f := range files {
+			f = filepath.ToSlash(filepath.Clean(f))
+			if !have[f] {
+				return nil, fmt.Errorf("the run has no output %q", f)
+			}
+			pick = append(pick, f)
+		}
+	}
+	if len(pick) == 0 {
+		return nil, errors.New("the run has no output files")
+	}
+	dest, err = filepath.Abs(config.ExpandHome(dest))
+	if err != nil {
+		return nil, err
+	}
+	var conflicts []string
+	for _, rel := range pick {
+		if _, err := os.Stat(filepath.Join(dest, filepath.FromSlash(rel))); err == nil {
+			conflicts = append(conflicts, rel)
+		}
+	}
+	if len(conflicts) > 0 && !overwrite {
+		return nil, &ConflictError{Files: conflicts}
+	}
+	var moved []string
+	for _, rel := range pick {
+		src, err := insideDir(meta.OutDir, rel)
+		if err != nil {
+			return moved, err
+		}
+		dst := filepath.Join(dest, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return moved, err
+		}
+		if err := moveFile(src, dst); err != nil {
+			return moved, err
+		}
+		moved = append(moved, dst)
+	}
+	return moved, os.RemoveAll(meta.Dir)
+}
+
+// ConflictError lists files that already exist in the destination.
+type ConflictError struct{ Files []string }
+
+func (e *ConflictError) Error() string {
+	return "these files already exist in the destination: " + strings.Join(e.Files, ", ") + " (use overwrite to replace them)"
+}
+
+// moveFile renames, or copies and deletes when src and dst are on different disks.
+func moveFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(dst)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Remove(src)
 }
 
 // OutputFile is a file the run produced.
