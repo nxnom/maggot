@@ -271,3 +271,45 @@ func TestRunOwnedByOtherProcess(t *testing.T) {
 		t.Fatalf("dead run should be failed: %s", meta.Status)
 	}
 }
+
+func TestExternalOutputFolder(t *testing.T) {
+	tool := makeTool(t, workerManifest, workerScript)
+	m := NewManager(t.TempDir(), 10)
+	dest := t.TempDir()
+	os.WriteFile(filepath.Join(dest, "old.txt"), []byte("mine"), 0o644)
+	old := time.Now().Add(-time.Hour)
+	os.Chtimes(filepath.Join(dest, "old.txt"), old, old)
+
+	r, err := m.StartWith(tool, StartOptions{Values: map[string]any{"name": "new"}, OutDir: dest, Origin: "ui"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta := waitRun(t, r)
+	if !meta.External || meta.OutDir != dest || meta.Status != StatusSucceeded {
+		t.Fatalf("meta: %+v", meta)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "new.txt")); err != nil {
+		t.Fatal("tool should write into the chosen folder")
+	}
+	got, _ := m.Get(meta.ID)
+	files := m.Outputs(got)
+	if len(files) != 2 { // new.txt and sub/n.txt, not old.txt
+		t.Fatalf("outputs: %+v", files)
+	}
+	for _, f := range files {
+		if f.Path == "old.txt" {
+			t.Fatal("files that were already there must not be listed")
+		}
+	}
+	if _, err := m.Take(meta.ID, t.TempDir(), nil, false); err == nil {
+		t.Fatal("take of an external run should fail")
+	}
+	if err := m.Delete(meta.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"old.txt", "new.txt"} {
+		if _, err := os.Stat(filepath.Join(dest, f)); err != nil {
+			t.Fatalf("deleting the run must keep %s", f)
+		}
+	}
+}

@@ -252,6 +252,8 @@ details.advanced[open] > summary { margin-bottom: 10px; }
 .cmd.err::before, .cmd.todo::before { content: ""; }
 .cmd.todo { color: var(--ink-2); font-family: var(--sans); font-size: 14px; }
 .cmdline .go { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.out-field { margin: 0; }
+.out-field .help code { overflow-wrap: anywhere; }
 
 /* ---------- run panel ---------- */
 .panel { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); min-width: 0; }

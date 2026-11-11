@@ -311,11 +311,49 @@ async function toolPage(spec) {
   const runBtn = h("button", { class: "run-btn", type: "submit" }, "Run");
   const skip = h("label", { class: "check", style: "font-size:13.5px" }, h("input", { type: "checkbox" }), h("span", null, "Skip requirement check"));
   skip.hidden = true;
+  // Where files go: the run folder (review, then move) or a folder the user picks.
+  const writesFiles = !m.outputs || !["stdout", "none", "inplace"].includes(m.outputs.kind);
+  let out = store("out:" + tool.ref) || { mode: "run", path: "" };
+  const outDir = () => (out.mode === "folder" && out.path ? out.path : "");
+  const outControl = writesFiles ? h("div", { class: "field out-field" }) : null;
+  function renderOut() {
+    if (!outControl) return;
+    const name = "out-" + m.id;
+    const radio = (mode, label) => {
+      const input = h("input", { type: "radio", name, value: mode, checked: out.mode === mode });
+      input.addEventListener("change", async () => {
+        if (mode === "folder" && !out.path) {
+          const p = await pick({ mode: "dir", title: "Save files to this folder" });
+          if (!p) { renderOut(); return; }
+          out.path = p;
+        }
+        out.mode = mode;
+        store("out:" + tool.ref, out);
+        renderOut();
+        preview();
+      });
+      return h("label", null, input, h("span", null, label));
+    };
+    const change = h("button", { class: "btn small quiet", type: "button" }, "Change…");
+    change.addEventListener("click", async () => {
+      const p = await pick({ mode: "dir", title: "Save files to this folder", start: out.path || undefined });
+      if (p) { out = { mode: "folder", path: p }; store("out:" + tool.ref, out); renderOut(); preview(); }
+    });
+    clear(outControl,
+      h("div", { class: "label", id: name + "-label" }, "Save files to"),
+      h("div", { class: "segmented", role: "radiogroup", "aria-labelledby": name + "-label" },
+        radio("run", "Run folder"), radio("folder", "A folder I choose")),
+      h("div", { class: "help" }, out.mode === "folder"
+        ? [h("code", null, out.path), " ", change]
+        : "Files stay in maggot's run folder. Look at them, then move them where you want."));
+  }
+  renderOut();
+
   const preview = debounce(async () => {
     const values = form.values();
     store("values:" + tool.ref, values);
     try {
-      const res = await post("/api/preview", { ref: tool.ref, values });
+      const res = await post("/api/preview", { ref: tool.ref, values, out_dir: outDir() });
       // Only required fields missing: a hint, not an error.
       const lines = (res.error || "").split("\n").slice(1).map((l) => l.trim().replace(/^- /, ""));
       const onlyRequired = res.error && lines.length && lines.every((l) => l.endsWith(": is required"));
@@ -333,7 +371,7 @@ async function toolPage(spec) {
   const form = buildForm(m.inputs || [], saved, preview);
   const formEl = h("form", { class: "form", novalidate: true },
     form.el,
-    h("div", { class: "cmdline" }, cmd, h("div", { class: "go" }, runBtn, skip,
+    h("div", { class: "cmdline" }, outControl, cmd, h("div", { class: "go" }, runBtn, skip,
       h("button", { class: "btn small quiet", type: "button", onclick: () => form.set(null) }, "Reset form"))));
   preview();
 
@@ -389,7 +427,7 @@ async function toolPage(spec) {
     e.preventDefault();
     runBtn.disabled = true;
     try {
-      const meta = await post("/api/runs", { ref: tool.ref, values: form.values(), skip_checks: skip.querySelector("input").checked });
+      const meta = await post("/api/runs", { ref: tool.ref, values: form.values(), skip_checks: skip.querySelector("input").checked, out_dir: outDir() });
       await runView.show(meta.id);
       loadHistory(meta.id);
     } catch (err) {

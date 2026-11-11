@@ -53,8 +53,12 @@ type RunMeta struct {
 	// agent moves them into a project (`maggot run --review`).
 	Review bool `json:"review,omitempty"`
 	// Origin is "ui" or "cli"; PID is the process that runs the tool.
-	Origin   string     `json:"origin,omitempty"`
-	PID      int        `json:"pid,omitempty"`
+	Origin string `json:"origin,omitempty"`
+	PID    int    `json:"pid,omitempty"`
+	// External means the tool wrote into a folder the user chose (OutDir),
+	// not into the run folder. Those files belong to the user: deleting the
+	// run never deletes them.
+	External bool       `json:"external,omitempty"`
 	ExitCode *int       `json:"exit_code,omitempty"`
 	Error    string     `json:"error,omitempty"`
 	Started  time.Time  `json:"started"`
@@ -191,8 +195,11 @@ type StartOptions struct {
 	// the args already contain it.
 	Args     []string
 	ExtraEnv []string
-	// Cwd is the working directory; empty means the run's out folder.
-	Cwd    string
+	// Cwd is the working directory; empty means the output folder.
+	Cwd string
+	// OutDir is a folder the user chose for the output. Empty means the
+	// run's own out folder.
+	OutDir string
 	Review bool
 	Origin string
 }
@@ -204,6 +211,20 @@ func (m *Manager) StartWith(t *toolbox.Tool, o StartOptions) (*Run, error) {
 	id := newRunID()
 	dir := filepath.Join(m.Root, id)
 	out := filepath.Join(dir, "out")
+	external := false
+	if o.OutDir != "" {
+		abs, err := filepath.Abs(config.ExpandHome(o.OutDir))
+		if err != nil {
+			return nil, err
+		}
+		if err := os.MkdirAll(abs, 0o755); err != nil {
+			return nil, fmt.Errorf("output folder: %w", err)
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+		out, external = abs, true
+	}
 	dirFlag := ""
 	if man.Outputs != nil {
 		dirFlag = man.Outputs.DirFlag
@@ -244,7 +265,7 @@ func (m *Manager) StartWith(t *toolbox.Tool, o StartOptions) (*Run, error) {
 		meta: RunMeta{
 			ID: id, Ref: t.Ref(), ToolID: man.ID, ToolName: man.Name, ToolVersion: man.Version,
 			Values: values, Argv: cmd.Args, Dir: dir, OutDir: out, Status: StatusRunning,
-			Started: time.Now(), Progress: -1, Review: o.Review, Origin: o.Origin, PID: os.Getpid(),
+			Started: time.Now(), Progress: -1, Review: o.Review, Origin: o.Origin, PID: os.Getpid(), External: external,
 		},
 		subs: map[chan Message]struct{}{},
 		cmd:  cmd,
@@ -500,7 +521,9 @@ func (m *Manager) Get(id string) (RunMeta, error) {
 		meta.Error = "maggot stopped while the run was active"
 	}
 	meta.Dir = filepath.Join(m.Root, id) // trust the location, not the file
-	meta.OutDir = filepath.Join(meta.Dir, "out")
+	if !meta.External {
+		meta.OutDir = filepath.Join(meta.Dir, "out")
+	}
 	return meta, nil
 }
 
@@ -654,6 +677,9 @@ func (m *Manager) Take(id, dest string, files []string, overwrite bool) ([]strin
 	if meta.Status == StatusRunning {
 		return nil, errors.New("the run is still active")
 	}
+	if meta.External {
+		return nil, fmt.Errorf("the files are already in %s", meta.OutDir)
+	}
 	outputs := m.Outputs(meta)
 	var pick []string
 	if len(files) == 0 {
@@ -752,14 +778,31 @@ type OutputFile struct {
 }
 
 // Outputs lists files in the run's out folder (newest first, max 500).
+// For a user-chosen folder only files written since the run started count,
+// so files that were already there are not shown as results.
 func (m *Manager) Outputs(meta RunMeta) []OutputFile {
 	out := []OutputFile{}
+	since := meta.Started.Add(-2 * time.Second)
+	seen := 0
 	filepath.WalkDir(meta.OutDir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || len(out) >= 500 || strings.HasPrefix(d.Name(), ".") {
+		seen++
+		if seen > 50000 {
+			return filepath.SkipAll // a huge folder: stop looking
+		}
+		if err != nil || len(out) >= 500 || strings.HasPrefix(d.Name(), ".") {
+			if d != nil && d.IsDir() && p != meta.OutDir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
 			return nil
 		}
 		info, err := d.Info()
 		if err != nil || !info.Mode().IsRegular() {
+			return nil
+		}
+		if meta.External && info.ModTime().Before(since) {
 			return nil
 		}
 		rel, _ := filepath.Rel(meta.OutDir, p)

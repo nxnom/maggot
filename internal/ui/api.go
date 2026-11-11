@@ -412,6 +412,7 @@ func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		Ref    string         `json:"ref"`
 		Values map[string]any `json:"values"`
+		OutDir string         `json:"out_dir"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		return err
@@ -423,6 +424,9 @@ func (s *Server) apiPreview(w http.ResponseWriter, r *http.Request) error {
 	out := ""
 	if t.Manifest.Outputs != nil && t.Manifest.Outputs.DirFlag != "" {
 		out = "<run folder>"
+		if req.OutDir != "" {
+			out = req.OutDir
+		}
 	}
 	args, err := runner.BuildArgs(t.Manifest, req.Values, out)
 	if err != nil {

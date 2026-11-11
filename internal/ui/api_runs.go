@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nxnom/maggot/internal/config"
 	"github.com/nxnom/maggot/internal/workspace"
 )
 
@@ -19,6 +20,7 @@ func (s *Server) apiStartRun(w http.ResponseWriter, r *http.Request) error {
 		Ref        string         `json:"ref"`
 		Values     map[string]any `json:"values"`
 		SkipChecks bool           `json:"skip_checks"`
+		OutDir     string         `json:"out_dir"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		return err
@@ -37,7 +39,10 @@ func (s *Server) apiStartRun(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	run, err := s.runs.Start(t, req.Values, env)
+	if req.OutDir != "" && !filepath.IsAbs(config.ExpandHome(req.OutDir)) {
+		return errors.New("choose an output folder (absolute path)")
+	}
+	run, err := s.runs.StartWith(t, StartOptions{Values: req.Values, ExtraEnv: env, OutDir: req.OutDir, Origin: "ui"})
 	if err != nil {
 		return err
 	}

@@ -143,15 +143,18 @@ export class RunView {
     }
     if (detail.outputs.length) {
       const n = detail.outputs.length;
-      const move = h("button", { class: "btn small green", type: "button" }, "Move files to…");
-      move.addEventListener("click", () => this.take(id, n));
+      const external = detail.run.external;
+      const move = external ? null : h("button", { class: "btn small green", type: "button" }, "Move files to…");
+      if (move) move.addEventListener("click", () => this.take(id, n));
       if (detail.run.review && detail.run.status === "succeeded") {
         items.push(h("div", { class: "review-note" },
           h("strong", null, "Waiting for your review. "),
           "The agent will move these files into place when you approve. To reject them, delete this run."));
       }
       items.push(h("div", { class: "row", style: "margin:16px 0 0;justify-content:space-between;flex-wrap:wrap" },
-        h("h3", { style: "font-size:14px;margin:0" }, `${n} file${n === 1 ? "" : "s"}`), move),
+        h("h3", { style: "font-size:14px;margin:0" }, external
+          ? [`${n} new file${n === 1 ? "" : "s"} in `, h("code", null, detail.run.out_dir)]
+          : `${n} file${n === 1 ? "" : "s"}`), move),
         h("div", { class: "outputs" }, detail.outputs.slice(0, 60).map((f) => outputCard(id, f))));
     } else if (detail.run.status === "succeeded" && !items.length && this.lines === 0) {
       items.push(h("p", { class: "muted" }, "Finished with no output."));
