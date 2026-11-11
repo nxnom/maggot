@@ -2,9 +2,13 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/nxnom/maggot/internal/doctor"
+	"github.com/nxnom/maggot/internal/secrets"
 
 	"github.com/spf13/cobra"
 )
@@ -24,6 +28,13 @@ type app struct {
 	stderr io.Writer
 
 	toolboxFlag string
+
+	// Test hooks. Nil means use the real implementation.
+	doctor           *doctor.Checker
+	installer        func(argv []string) error
+	secrets          secrets.Store
+	forceInteractive *bool
+	reader           *bufio.Reader
 }
 
 func newRootCmd(a *app) *cobra.Command {
@@ -41,13 +52,16 @@ func newRootCmd(a *app) *cobra.Command {
 	root.SetOut(a.stdout)
 	root.SetErr(a.stderr)
 	root.PersistentFlags().StringVar(&a.toolboxFlag, "toolbox", "", "use only this toolbox (registered name or path); env: MAGGOT_TOOLBOX")
-	root.AddCommand(a.toolboxCmd(), a.listCmd(), a.infoCmd())
+	root.AddCommand(a.toolboxCmd(), a.listCmd(), a.infoCmd(), a.doctorCmd(), a.secretCmd())
 	return root
 }
 
 // Execute runs the CLI and returns the process exit code.
 func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	a := &app{stdin: stdin, stdout: stdout, stderr: stderr}
+	return (&app{stdin: stdin, stdout: stdout, stderr: stderr}).execute(args)
+}
+
+func (a *app) execute(args []string) int {
 	root := newRootCmd(a)
 	root.SetArgs(args)
 	err := root.Execute()
@@ -58,6 +72,6 @@ func Execute(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if errors.As(err, &ee) {
 		return ee.code
 	}
-	fmt.Fprintln(stderr, "error:", err)
+	fmt.Fprintln(a.stderr, "error:", err)
 	return 1
 }
