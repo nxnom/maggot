@@ -7,12 +7,31 @@ program must run without maggot.
 ## Workflow (for agents)
 
 1. Search first: `maggot search <what you need>`. Reuse a tool when one fits.
-2. Scaffold: `maggot new <id> --lang python|sh|deno [--dir <scratch dir>]`.
+   If a tool almost fits, improve it (and bump `version`) instead of adding a
+   second similar tool.
+2. Pick the simplest kind (see "Choosing the kind of tool") and scaffold:
+   `maggot new <id> --lang bin|sh|python|deno [--bin <program>] --dir <scratch dir>`.
    The template already works and passes its tests. Change it into your tool.
-3. Write the program, update `tool.json`, `README.md` and `tests/cases.json`.
+3. Write the program (none for `bin`), update `tool.json`, `README.md` and
+   `tests/cases.json`.
 4. Test until it passes: `maggot test <dir>`.
 5. Install it: `maggot import <dir>` (the user confirms, or pass `--yes` after
    the user approved). Bump `version` for updates.
+
+## Choosing the kind of tool
+
+Use the simplest kind that does the job:
+
+| kind | when | what you write |
+|---|---|---|
+| `bin` | an installed program already does it (yt-dlp, ffmpeg, magick, pandoc) | only `tool.json`: `entry.bin`, fixed `entry.args`, and `inputs` mapped to the program's own flags |
+| `sh` | small glue: a few commands, fixed flags, a loop over files | a short POSIX shell script |
+| `python` | real logic or libraries (Pillow, OpenCV, an API client) | a uv script with inline dependencies |
+| `deno` | real logic or libraries in TypeScript | a Deno script with `npm:`/`jsr:` imports |
+
+Do not write a script only to rename another program's flags; that is what a
+`bin` tool's `inputs` are for. Do not add a runtime (uv, deno) the task does
+not need.
 
 ## Folder layout
 
@@ -65,8 +84,10 @@ Unknown fields are errors. The fields are:
 | `name`, `description` | yes | the description is the most important search text |
 | `categories` | no | up to 5, used for grouping in the UI |
 | `tags` | no | extra search words: synonyms, formats, library names |
-| `entry.path` | yes | entry file, relative, forward slashes |
-| `entry.interpreter` | no | argv prefix, e.g. `["uv","run","--script"]`, `["deno","run","-A"]`, `["sh"]`. Without it, `entry.path` must be executable. Set it even when the file has a shebang so the tool also runs on Windows. |
+| `entry.path` | one of path/bin | entry file, relative, forward slashes |
+| `entry.bin` | one of path/bin | a program on PATH, for manifest-only tools (checked like a requirement) |
+| `entry.interpreter` | no | with `path` only: argv prefix, e.g. `["uv","run","--script"]`, `["deno","run","-A"]`, `["sh"]`. Without it, `entry.path` must be executable. Set it even when the file has a shebang so the tool also runs on Windows. |
+| `entry.args` | no | fixed args placed before the user's args, e.g. `["--newline", "-o", "%(title)s.%(ext)s"]`. Many programs let a later flag win, so these work as overridable defaults. |
 | `requires[]` | no | binaries needed on PATH. `version` is a semver constraint (`>=7`, `^1.2`, `~3.1`). `check` are the args that print the version (default `["--version"]`). `install` maps a package manager to a package name. |
 | `env[]` | no | env vars the tool reads. `secret: true` values are stored by `maggot secret set` outside the toolbox and passed at run time. `required: true` blocks `maggot run` when the value is missing. Names starting with `MAGGOT_` are reserved. |
 | `inputs[]` | no | describe args so the web UI can build a form and `--inputs` JSON works. Tools without inputs still run with raw args. |
@@ -86,18 +107,42 @@ zypper, nix, winget, scoop, choco, npm, pipx, uv, cargo, go.
 | `string` | string | one-line text |
 | `text` | string | multi-line text |
 | `integer`, `number` | number, `min`/`max` | number field |
-| `boolean` | true/false | checkbox; must use a flag, sent only when true |
-| `enum` | one of `options` (strings or `{"value","label"}`) | select |
+| `boolean` | true/false | checkbox; sent only when true, as `arg.flag` or as the list `arg.args` |
+| `enum` | one of `options` (strings or `{"value","label","args"}`) | select |
 | `file`, `directory` | path | file / folder picker; `accept` takes MIME types or extensions |
 | `files` | list of paths | multi-file picker |
+| `strings` | list of strings | one value per line (URLs, names) |
+| `args` | string, split like a shell command line | free-form extra args, no `arg` needed |
 
-`arg` is either `{"flag": "--name"}` or `{"positional": true}`. A `files` input
-with a flag needs `"repeat": true` (`--in a --in b`). Only the last positional
-input may be `files`. maggot builds argv in this order: flags (manifest
-order), then `outputs.dir_flag`, then positionals. A missing value uses
-`default`; when there is no default, the flag is left out.
+How a value becomes argv (`arg`):
 
-Optional per input: `label`, `description`, `required`, `default`.
+- `{"flag": "--width"}` → `--width 800`
+- `{"positional": true}` → `800`
+- `{"flag": "-S", "template": "res:{value}"}` → `-S res:1080`. `template`
+  also works with positional inputs.
+- boolean `{"args": ["--write-subs", "--embed-subs"]}` → both args when true.
+- list inputs (`files`, `strings`): positional, or a flag with
+  `"repeat": true` (`--in a --in b`). Only the last positional input may be a list.
+- enum options with `args` choose a whole set of args, and the input has no
+  `arg`. Either every option has `args` or none does; `"args": []` sends nothing:
+
+      {"name": "mode", "type": "enum", "default": "video", "options": [
+        {"value": "video", "label": "Video", "args": []},
+        {"value": "mp3", "label": "Audio MP3", "args": ["-x", "--audio-format", "mp3"]}
+      ]}
+
+- `args` inputs are split into words (quotes work, no variables or globs) and
+  passed as they are. Use one as an "Extra args" escape hatch for programs
+  with many options.
+
+maggot builds argv in this order: `entry.args`, flags and option/boolean args
+(manifest order), `outputs.dir_flag`, `args` inputs, then positionals. A
+missing value uses `default`; when there is no default, nothing is sent.
+
+Optional per input: `label`, `description`, `required`, `default`, and form
+hints that do not change argv: `placeholder`, `group` (section title, e.g.
+`"Extras"`), `advanced: true` (hidden until the user opens advanced options).
+Map the options people really use; leave the rest to an `args` input.
 
 ### outputs
 
@@ -110,6 +155,11 @@ Optional per input: `label`, `description`, `required`, `default`.
 | `inplace` | changes the input files | |
 | `none` | side effects only (send mail, call an API) | |
 
+`progress` (any kind) reads progress from output lines for programs that do
+not write `MAGGOT_EVENTS`: `{"regex": "\\[download\\]\\s+([\\d.]+)%", "max": 100}`.
+The first regex group is the number; `max` is the value that means done
+(default 100).
+
 For `files` tools, always support an output folder flag and declare it in
 `dir_flag`. The web UI gives every run its own folder through that flag and
 previews the files it finds there. A tool without `dir_flag` can still write
@@ -117,7 +167,8 @@ files wherever it wants; it just has no managed output folder.
 
 ## Run contract
 
-- Input is argv. maggot runs: `<interpreter...> <abs entry path> <args...>`.
+- Input is argv. maggot runs `<interpreter...> <abs entry path> <entry.args...> <args...>`,
+  or `<bin> <entry.args...> <args...>` for bin tools.
 - The working directory is the caller's directory, so relative paths work.
 - Exit code 0 means success. Print errors to stderr.
 - Write results to stdout and/or files, and declare which in `outputs`. When
@@ -142,7 +193,7 @@ Ignore the variable when it is not set. Never fail because of it.
 
 ## Dependencies
 
-Pick the runtime that keeps the tool standalone:
+Keep the tool standalone, and add no runtime it does not need:
 
 - Python: `uv` with inline script metadata (`# /// script` block). uv installs
   the packages into a cached env on first run. No venv folder in the tool.

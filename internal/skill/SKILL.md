@@ -40,11 +40,19 @@ a second similar tool.
 ## Create a tool
 
 1. Read `maggot guide` once: it is the full manifest, run contract and test format.
-2. `maggot new <id> --lang python|sh|deno --dir <scratch folder>` — a working
-   template. Prefer python (uv inline deps) or deno (npm:/jsr: imports) so the
-   tool stays standalone. Never depend on files in the current project.
-3. Write the program. Fill `tool.json`: clear `description`, `tags` with search
-   synonyms, `requires` with install hints, `inputs` for every arg, `outputs`.
+2. Pick the simplest kind and scaffold a working template in a scratch folder:
+   - `--lang bin --bin <program>`: an installed program already does the job
+     (yt-dlp, ffmpeg, magick). No code: only `tool.json` mapping inputs to the
+     program's flags. Never write a script just to wrap another CLI.
+   - `--lang sh`: small glue around existing programs.
+   - `--lang python` (uv inline deps) or `--lang deno` (npm:/jsr:): only for
+     real logic or libraries.
+
+   `maggot new <id> --lang <kind> --dir <scratch folder>`. Never depend on
+   files in the current project.
+3. Write the program (none for bin). Fill `tool.json`: clear `description`,
+   `tags` with search synonyms, `requires` with install hints, `inputs` for the
+   options people use (plus an `args` input for the rest), `outputs`.
 4. Write `tests/cases.json` with real fixtures, including a failure case.
    Run `maggot test <dir>` until every case passes.
 5. Ask the user, then `maggot import <dir> --yes`. For an update, bump

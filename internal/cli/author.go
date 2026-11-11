@@ -30,17 +30,25 @@ func (a *app) guideCmd() *cobra.Command {
 }
 
 func (a *app) newCmd() *cobra.Command {
-	var lang, dir, name, desc string
+	var lang, dir, name, desc, bin string
 	cmd := &cobra.Command{
 		Use:   "new <id>",
 		Short: "Create a new tool folder from a working template",
-		Long: `Create <dir>/<id> with tool.json, an entry program, README.md and tests.
-The template works and passes 'maggot test'; change it into your tool, then
-'maggot import' it. Run 'maggot guide' for the full manifest reference.`,
-		Example: "  maggot new image-resize --lang python --dir /tmp/work",
-		Args:    cobra.ExactArgs(1),
+		Long: `Create <dir>/<id> with tool.json, README.md, tests and (except for bin) an
+entry program. The template works and passes 'maggot test'; change it into
+your tool, then 'maggot import' it. Run 'maggot guide' for the full reference.
+
+Pick the simplest kind that works:
+  bin     a program on PATH already does the job (yt-dlp, ffmpeg, magick):
+          no code, only a manifest with inputs mapped to its flags
+  sh      small glue around existing programs
+  python  real logic or libraries (uv installs inline dependencies)
+  deno    real logic or libraries in TypeScript (npm:/jsr: imports)`,
+		Example: `  maggot new youtube-download --lang bin --bin yt-dlp --dir /tmp/work
+  maggot new image-resize --lang python --dir /tmp/work`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path, err := scaffold.Create(dir, scaffold.Options{ID: args[0], Lang: lang, Name: name, Description: desc})
+			path, err := scaffold.Create(dir, scaffold.Options{ID: args[0], Lang: lang, Name: name, Description: desc, Bin: bin})
 			if err != nil {
 				return err
 			}
@@ -49,7 +57,9 @@ The template works and passes 'maggot test'; change it into your tool, then
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&lang, "lang", "python", "template: "+strings.Join(scaffold.Langs(), ", "))
+	cmd.Flags().StringVar(&lang, "lang", "", "kind of tool: "+strings.Join(scaffold.Langs(), ", ")+" (required)")
+	cmd.Flags().StringVar(&bin, "bin", "", "program to run, for --lang bin")
+	_ = cmd.MarkFlagRequired("lang")
 	cmd.Flags().StringVar(&dir, "dir", ".", "parent folder for the new tool")
 	cmd.Flags().StringVar(&name, "name", "", "display name")
 	cmd.Flags().StringVar(&desc, "description", "", "one-line description")

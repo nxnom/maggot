@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "name": "downloads a video into the output folder",
+      "inputs": {"urls": ["file://{tool}/tests/fixtures/sample.mp4"], "extra": "--enable-file-urls"},
+      "out": "{work}/out",
+      "expect": {"stdout_contains": ["100"], "files": ["out/sample.mp4"]}
+    },
+    {
+      "name": "extracts mp3 audio",
+      "inputs": {"urls": ["file://{tool}/tests/fixtures/sample.mp4"], "mode": "mp3", "extra": "--enable-file-urls"},
+      "out": "{work}/out",
+      "expect": {"stdout_contains": ["ExtractAudio"], "files": ["out/sample.mp3"]}
+    },
+    {
+      "name": "raw yt-dlp args work",
+      "args": ["--enable-file-urls", "-x", "--audio-format", "m4a", "-P", "{work}/raw", "file://{tool}/tests/fixtures/sample.mp4"],
+      "expect": {"files": ["raw/sample.m4a"]}
+    },
+    {
+      "name": "bad url fails",
+      "args": ["not-a-url"],
+      "expect": {"exit": 1, "stderr_contains": ["not-a-url"]}
+    }
+  ]
+}

@@ -32,13 +32,16 @@ var langs = map[string]lang{
 		[]manifest.Requirement{{Bin: "deno", Install: map[string]string{"brew": "deno", "winget": "DenoLand.Deno", "npm": "deno"}}}},
 }
 
-// Langs lists the template languages.
+// LangBin makes a manifest-only tool that runs a program on PATH.
+const LangBin = "bin"
+
+// Langs lists the template kinds.
 func Langs() []string {
-	out := make([]string, 0, len(langs))
+	out := []string{LangBin}
 	for k := range langs {
 		out = append(out, k)
 	}
-	sort.Strings(out)
+	sort.Strings(out[1:])
 	return out
 }
 
@@ -47,16 +50,21 @@ type Options struct {
 	Lang        string
 	Name        string
 	Description string
+	// Bin is the program to run, for Lang "bin".
+	Bin string
 }
 
 // Create writes a new tool folder at parent/<id> and returns its path.
 func Create(parent string, o Options) (string, error) {
-	l, ok := langs[o.Lang]
-	if !ok {
-		return "", fmt.Errorf("unknown language %q (choose: %s)", o.Lang, strings.Join(Langs(), ", "))
-	}
 	if o.Name == "" {
 		o.Name = titleCase(o.ID)
+	}
+	if o.Lang == LangBin {
+		return createBin(parent, o)
+	}
+	l, ok := langs[o.Lang]
+	if !ok {
+		return "", fmt.Errorf("unknown kind %q (choose: %s)", o.Lang, strings.Join(Langs(), ", "))
 	}
 	if o.Description == "" {
 		o.Description = "Copy text files, optionally in upper case. (Template: replace with what the tool does.)"
@@ -77,10 +85,8 @@ func Create(parent string, o Options) (string, error) {
 		return "", err
 	}
 
-	dir := filepath.Join(parent, o.ID)
-	if _, err := os.Stat(dir); err == nil {
-		return "", fmt.Errorf("%s already exists", dir)
-	} else if !errors.Is(err, fs.ErrNotExist) {
+	dir, err := newDir(parent, o.ID)
+	if err != nil {
 		return "", err
 	}
 	src, err := templates.ReadFile("templates/" + o.Lang + "/" + l.file)
@@ -88,19 +94,34 @@ func Create(parent string, o Options) (string, error) {
 		return "", err
 	}
 	body := strings.NewReplacer("{{ID}}", o.ID, "{{NAME}}", o.Name, "{{DESCRIPTION}}", o.Description).Replace(string(src))
-	manifestJSON, _ := json.MarshalIndent(m, "", "  ")
-
-	files := []struct {
-		path string
-		data string
-		mode os.FileMode
-	}{
-		{manifest.FileName, string(manifestJSON) + "\n", 0o644},
+	return write(dir, m, []file{
 		{l.file, body, 0o755},
 		{"tests/fixtures/hello.txt", "hello maggot\n", 0o644},
 		{"tests/cases.json", casesJSON(), 0o644},
-		{"README.md", readme(m, l.file), 0o644},
+		{"README.md", readme(m, "./"+l.file, "--upper --out out notes.txt"), 0o644},
+	})
+}
+
+type file struct {
+	path string
+	data string
+	mode os.FileMode
+}
+
+func newDir(parent, id string) (string, error) {
+	dir := filepath.Join(parent, id)
+	if _, err := os.Stat(dir); err == nil {
+		return "", fmt.Errorf("%s already exists", dir)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
 	}
+	return dir, nil
+}
+
+// write saves tool.json plus files and checks the result loads.
+func write(dir string, m *manifest.Manifest, files []file) (string, error) {
+	manifestJSON, _ := json.MarshalIndent(m, "", "  ")
+	files = append([]file{{manifest.FileName, string(manifestJSON) + "\n", 0o644}}, files...)
 	for _, f := range files {
 		p := filepath.Join(dir, filepath.FromSlash(f.path))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -140,21 +161,63 @@ func casesJSON() string {
 `
 }
 
-func readme(m *manifest.Manifest, entry string) string {
+// createBin makes a manifest-only tool for a program on PATH.
+func createBin(parent string, o Options) (string, error) {
+	if o.Bin == "" {
+		return "", fmt.Errorf("--bin is required for kind bin (the program to run, e.g. yt-dlp)")
+	}
+	if o.Description == "" {
+		o.Description = fmt.Sprintf("Run %s. (Template: replace with what the tool does.)", o.Bin)
+	}
+	m := &manifest.Manifest{
+		Schema: manifest.SchemaVersion, ID: o.ID, Version: "0.1.0", Name: o.Name, Description: o.Description,
+		Tags:     []string{o.Bin},
+		Entry:    manifest.Entry{Bin: o.Bin},
+		Requires: []manifest.Requirement{{Bin: o.Bin, Install: map[string]string{"brew": o.Bin}}},
+		Inputs: []manifest.Input{
+			{Name: "args", Label: "Arguments", Type: manifest.TypeArgs, Placeholder: "--help"},
+		},
+		Outputs:  &manifest.Outputs{Kind: manifest.OutputStdout},
+		Examples: []string{fmt.Sprintf("maggot run %s -- --help", o.ID)},
+	}
+	if err := m.Validate(); err != nil {
+		return "", err
+	}
+	dir, err := newDir(parent, o.ID)
+	if err != nil {
+		return "", err
+	}
+	cases := fmt.Sprintf(`{
+  "cases": [
+    {
+      "name": "%s runs",
+      "args": ["--version"],
+      "expect": {"exit": 0}
+    }
+  ]
+}
+`, o.Bin)
+	return write(dir, m, []file{
+		{"tests/cases.json", cases, 0o644},
+		{"README.md", readme(m, o.Bin, "--help"), 0o644},
+	})
+}
+
+func readme(m *manifest.Manifest, entry, args string) string {
 	return fmt.Sprintf(`# %s
 
 %s
 
 ## Usage
 
-    ./%s --upper --out out notes.txt
-    maggot run %s -- --upper --out out notes.txt
+    %s %s
+    maggot run %s -- %s
 
 ## Notes
 
 Write anything an agent or person needs to know here: limits, input formats,
 side effects, examples.
-`, m.Name, m.Description, entry, m.ID)
+`, m.Name, m.Description, entry, args, m.ID, args)
 }
 
 func titleCase(id string) string {

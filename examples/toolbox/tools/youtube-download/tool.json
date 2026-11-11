@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "id": "youtube-download",
+  "version": "1.0.0",
+  "name": "YouTube Download",
+  "description": "Download video or audio from YouTube and 1000+ other sites with yt-dlp.",
+  "categories": ["Video", "Audio", "Downloads"],
+  "tags": ["yt-dlp", "youtube", "video", "audio", "mp3", "mp4", "m4a", "playlist", "download", "vimeo", "twitter"],
+  "entry": {
+    "bin": "yt-dlp",
+    "args": ["--newline", "--no-playlist", "-o", "%(title)s.%(ext)s"]
+  },
+  "requires": [
+    {"bin": "yt-dlp", "version": ">=2024.1", "install": {"brew": "yt-dlp", "winget": "yt-dlp.yt-dlp", "pipx": "yt-dlp", "uv": "yt-dlp"}},
+    {"bin": "ffmpeg", "check": ["-version"], "install": {"brew": "ffmpeg", "apt": "ffmpeg", "dnf": "ffmpeg", "winget": "Gyan.FFmpeg"}}
+  ],
+  "inputs": [
+    {"name": "urls", "label": "URLs", "type": "strings", "required": true,
+     "placeholder": "https://www.youtube.com/watch?v=…", "description": "One or more video, playlist or channel URLs.",
+     "arg": {"positional": true}},
+    {"name": "mode", "label": "Download", "type": "enum", "default": "video", "options": [
+      {"value": "video", "label": "Video (best quality)", "args": []},
+      {"value": "mp4", "label": "Video as MP4", "args": ["--remux-video", "mp4"]},
+      {"value": "mp3", "label": "Audio as MP3", "args": ["-x", "--audio-format", "mp3"]},
+      {"value": "m4a", "label": "Audio as M4A", "args": ["-x", "--audio-format", "m4a"]}
+    ]},
+    {"name": "max_height", "label": "Max quality", "type": "enum",
+     "description": "Prefer formats up to this height.",
+     "options": [
+       {"value": "2160", "label": "4K (2160p)"}, {"value": "1440", "label": "1440p"}, {"value": "1080", "label": "1080p"},
+       {"value": "720", "label": "720p"}, {"value": "480", "label": "480p"}
+     ],
+     "arg": {"flag": "-S", "template": "res:{value}"}},
+    {"name": "playlist", "label": "Whole playlist", "type": "boolean",
+     "description": "When the URL is a video in a playlist, download the whole playlist.",
+     "arg": {"flag": "--yes-playlist"}},
+    {"name": "subtitles", "label": "Embed subtitles", "type": "boolean", "group": "Extras",
+     "arg": {"args": ["--write-subs", "--embed-subs"]}},
+    {"name": "sub_langs", "label": "Subtitle languages", "type": "string", "group": "Extras", "advanced": true,
+     "placeholder": "en.*,ja", "description": "Comma separated; used with Embed subtitles.",
+     "arg": {"flag": "--sub-langs"}},
+    {"name": "metadata", "label": "Embed thumbnail and metadata", "type": "boolean", "group": "Extras",
+     "arg": {"args": ["--embed-thumbnail", "--embed-metadata"]}},
+    {"name": "cookies_browser", "label": "Use cookies from browser", "type": "enum", "group": "Extras", "advanced": true,
+     "description": "For age-restricted or members-only videos.",
+     "options": ["chrome", "firefox", "safari", "edge", "brave"],
+     "arg": {"flag": "--cookies-from-browser"}},
+    {"name": "extra", "label": "Extra yt-dlp args", "type": "args", "group": "Extras", "advanced": true,
+     "placeholder": "--limit-rate 2M --sponsorblock-remove all"}
+  ],
+  "outputs": {
+    "kind": "files",
+    "dir_flag": "-P",
+    "progress": {"regex": "\\[download\\]\\s+([\\d.]+)%"}
+  },
+  "examples": [
+    "maggot run youtube-download -- 'https://www.youtube.com/watch?v=ID'",
+    "maggot run youtube-download -- -x --audio-format mp3 -P ~/Music 'https://www.youtube.com/watch?v=ID'",
+    "maggot run youtube-download --inputs '{\"urls\": [\"https://youtu.be/ID\"], \"mode\": \"mp3\"}'"
+  ]
+}
