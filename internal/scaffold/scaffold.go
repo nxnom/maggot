@@ -70,7 +70,7 @@ func Create(parent string, o Options) (string, error) {
 			{Name: "upper", Label: "Upper case", Description: "Convert text to upper case", Type: manifest.TypeBoolean, Arg: manifest.Arg{Flag: "--upper"}},
 			{Name: "files", Label: "Text files", Type: manifest.TypeFiles, Required: true, Accept: []string{"text/*"}, Arg: manifest.Arg{Positional: true}},
 		},
-		Outputs:  &manifest.Outputs{DirFlag: "--out", Preview: "file"},
+		Outputs:  &manifest.Outputs{Kind: manifest.OutputFiles, DirFlag: "--out"},
 		Examples: []string{fmt.Sprintf("maggot run %s -- --upper --out out notes.txt", o.ID)},
 	}
 	if err := m.Validate(); err != nil {

@@ -25,7 +25,7 @@ const testManifest = `{
     {"name": "src", "type": "file", "required": true, "arg": {"positional": true}},
     {"name": "more", "type": "files", "arg": {"positional": true}}
   ],
-  "outputs": {"dir_flag": "--out"}
+  "outputs": {"kind": "files", "dir_flag": "--out"}
 }`
 
 func load(t *testing.T) *manifest.Manifest {

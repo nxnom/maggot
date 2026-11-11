@@ -18,7 +18,7 @@ var (
 	inputPattern    = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	flagPattern     = regexp.MustCompile(`^--?[A-Za-z0-9][A-Za-z0-9-]*$`)
 	PackageManagers = []string{"brew", "port", "apt", "dnf", "yum", "pacman", "apk", "zypper", "nix", "winget", "scoop", "choco", "npm", "pipx", "uv", "cargo", "go"}
-	previews        = map[string]bool{"": true, "none": true, "file": true, "image": true, "text": true, "json": true}
+	outputKinds     = map[string]bool{OutputFiles: true, OutputStdout: true, OutputInplace: true, OutputNone: true}
 )
 
 // Validate checks every rule and returns all problems joined together.
@@ -64,12 +64,23 @@ func (m *Manifest) Validate() error {
 	v.requires(m.Requires)
 	v.env(m.Env)
 	v.inputs(m.Inputs, m.Outputs)
-	if m.Outputs != nil {
-		if !previews[m.Outputs.Preview] {
-			v.add("outputs.preview", "must be one of none, file, image, text, json (got %q)", m.Outputs.Preview)
+	if o := m.Outputs; o != nil {
+		if !outputKinds[o.Kind] {
+			v.add("outputs.kind", "must be one of files, stdout, inplace, none (got %q)", o.Kind)
 		}
-		if m.Outputs.DirFlag != "" && !flagPattern.MatchString(m.Outputs.DirFlag) {
-			v.add("outputs.dir_flag", "invalid flag %q", m.Outputs.DirFlag)
+		if o.DirFlag != "" {
+			if o.Kind != OutputFiles {
+				v.add("outputs.dir_flag", "only allowed with kind \"files\"")
+			} else if !flagPattern.MatchString(o.DirFlag) {
+				v.add("outputs.dir_flag", "invalid flag %q", o.DirFlag)
+			}
+		}
+		if o.Format != "" {
+			if o.Kind != OutputStdout {
+				v.add("outputs.format", "only allowed with kind \"stdout\"")
+			} else if o.Format != "text" && o.Format != "json" {
+				v.add("outputs.format", "must be text or json (got %q)", o.Format)
+			}
 		}
 	}
 	return v.err()

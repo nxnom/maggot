@@ -14,7 +14,7 @@ import (
 
 const tm = `{"schema":1,"id":"t","version":"1.0.0","name":"T","description":"d","entry":{"path":"run"},
  "inputs":[{"name":"name","type":"string","arg":{"positional":true}}],
- "outputs":{"dir_flag":"--out"}}`
+ "outputs":{"kind":"files","dir_flag":"--out"}}`
 
 // script: prints greeting, writes out/<name>.txt when --out is given, exit 2 for "bad".
 const script = `#!/bin/sh

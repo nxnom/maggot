@@ -29,7 +29,7 @@ const validJSON = `{
     {"name": "force", "type": "boolean", "arg": {"flag": "--force"}},
     {"name": "files", "type": "files", "required": true, "accept": ["image/*"], "arg": {"positional": true}}
   ],
-  "outputs": {"dir_flag": "--out", "preview": "image"},
+  "outputs": {"kind": "files", "dir_flag": "--out"},
   "examples": ["run --width 800 a.png"]
 }`
 
@@ -107,7 +107,11 @@ func TestParseInvalid(t *testing.T) {
 			m["inputs"] = append(m["inputs"].([]any), map[string]any{"name": "dest", "type": "string", "arg": map[string]any{"positional": true}})
 		}, "may follow the variadic"},
 		{"files flag no repeat", func(m map[string]any) { input(m, 3)["arg"] = map[string]any{"flag": "--in"} }, "need repeat"},
-		{"bad preview", func(m map[string]any) { m["outputs"] = map[string]any{"preview": "video"} }, "outputs.preview"},
+		{"no kind", func(m map[string]any) { m["outputs"] = map[string]any{"dir_flag": "--out"} }, "outputs.kind"},
+		{"bad kind", func(m map[string]any) { m["outputs"] = map[string]any{"kind": "video"} }, "outputs.kind"},
+		{"dir flag on stdout", func(m map[string]any) { m["outputs"] = map[string]any{"kind": "stdout", "dir_flag": "--o"} }, "only allowed with kind \"files\""},
+		{"format on files", func(m map[string]any) { m["outputs"] = map[string]any{"kind": "files", "format": "json"} }, "only allowed with kind \"stdout\""},
+		{"bad format", func(m map[string]any) { m["outputs"] = map[string]any{"kind": "stdout", "format": "xml"} }, "text or json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

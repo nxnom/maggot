@@ -136,12 +136,22 @@ func (o *Option) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Outputs tells maggot and the UI how the tool writes results.
+// Output kinds.
+const (
+	OutputFiles   = "files"   // writes new files (into DirFlag when set)
+	OutputStdout  = "stdout"  // the result is what it prints
+	OutputInplace = "inplace" // changes the input files
+	OutputNone    = "none"    // side effects only (send mail, call an API)
+)
+
+// Outputs tells maggot and the UI what kind of result the tool produces.
+// It is a description, not a restriction: the tool decides where it writes.
 type Outputs struct {
-	// DirFlag is the flag that receives the output directory, e.g. "--out".
+	Kind string `json:"kind"`
+	// DirFlag is the flag that takes the output folder (kind "files"), e.g. "--out".
 	DirFlag string `json:"dir_flag,omitempty"`
-	// Preview hints how the UI shows results: none, file, image, text, json.
-	Preview string `json:"preview,omitempty"`
+	// Format of stdout for kind "stdout": "text" (default) or "json".
+	Format string `json:"format,omitempty"`
 }
 
 // Parse decodes a manifest strictly (unknown fields are errors) and validates it.

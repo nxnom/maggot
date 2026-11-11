@@ -50,7 +50,7 @@ The folder name must equal the tool `id`. A tool can contain anything it needs
     {"name": "overwrite", "type": "boolean", "arg": {"flag": "--overwrite"}},
     {"name": "files", "type": "files", "required": true, "accept": ["image/*"], "arg": {"positional": true}}
   ],
-  "outputs": {"dir_flag": "--out", "preview": "image"},
+  "outputs": {"kind": "files", "dir_flag": "--out"},
   "examples": ["maggot run image-resize -- --width 400 --out thumbs a.png b.png"]
 }
 ```
@@ -70,7 +70,7 @@ Unknown fields are errors. The fields are:
 | `requires[]` | no | binaries needed on PATH. `version` is a semver constraint (`>=7`, `^1.2`, `~3.1`). `check` are the args that print the version (default `["--version"]`). `install` maps a package manager to a package name. |
 | `env[]` | no | env vars the tool reads. `secret: true` values are stored by `maggot secret set` outside the toolbox and passed at run time. `required: true` blocks `maggot run` when the value is missing. Names starting with `MAGGOT_` are reserved. |
 | `inputs[]` | no | describe args so the web UI can build a form and `--inputs` JSON works. Tools without inputs still run with raw args. |
-| `outputs` | no | `dir_flag`: the flag that takes an output folder. `preview`: `none`, `file`, `image`, `text`, `json`. |
+| `outputs` | no | what the tool produces, see below |
 | `examples` | no | command lines shown by `maggot info` |
 
 The entry interpreter's first word (for example `uv`) is checked like a
@@ -99,13 +99,29 @@ order), then `outputs.dir_flag`, then positionals. A missing value uses
 
 Optional per input: `label`, `description`, `required`, `default`.
 
+### outputs
+
+`outputs` describes the result. It does not restrict the tool.
+
+| kind | meaning | extra fields |
+|---|---|---|
+| `files` | writes new files | `dir_flag`: the flag that takes the output folder, e.g. `--out` |
+| `stdout` | the result is what it prints | `format`: `text` (default) or `json` |
+| `inplace` | changes the input files | |
+| `none` | side effects only (send mail, call an API) | |
+
+For `files` tools, always support an output folder flag and declare it in
+`dir_flag`. The web UI gives every run its own folder through that flag and
+previews the files it finds there. A tool without `dir_flag` can still write
+files wherever it wants; it just has no managed output folder.
+
 ## Run contract
 
 - Input is argv. maggot runs: `<interpreter...> <abs entry path> <args...>`.
 - The working directory is the caller's directory, so relative paths work.
 - Exit code 0 means success. Print errors to stderr.
-- Write results to stdout and/or files. When the tool writes files, accept an
-  output folder flag and declare it in `outputs.dir_flag`.
+- Write results to stdout and/or files, and declare which in `outputs`. When
+  the tool writes new files, accept an output folder flag (`outputs.dir_flag`).
 - Do not prompt on stdin unless the tool's purpose needs it; agents run tools
   without a terminal.
 - maggot sets `MAGGOT_TOOL_DIR`, `MAGGOT_TOOL_ID`, `MAGGOT_TOOL_VERSION`. Use
