@@ -65,7 +65,7 @@ func (a *app) exportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := e.set.Resolve(args[0])
+			t, err := e.Set.Resolve(args[0])
 			if err != nil {
 				return err
 			}
@@ -206,7 +206,7 @@ func (a *app) removeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := e.set.Resolve(args[0])
+			t, err := e.Set.Resolve(args[0])
 			if err != nil {
 				return err
 			}

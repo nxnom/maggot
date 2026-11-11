@@ -9,18 +9,12 @@ import (
 
 	"github.com/nxnom/maggot/internal/secrets"
 	"github.com/nxnom/maggot/internal/toolbox"
+	"github.com/nxnom/maggot/internal/workspace"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
-type envStatus struct {
-	Name     string `json:"name"`
-	Secret   bool   `json:"secret"`
-	Required bool   `json:"required"`
-	Set      bool   `json:"set"`
-	// Source is "env" (already in the environment), "store" (saved secret) or "".
-	Source string `json:"source,omitempty"`
-}
+type envStatus = workspace.EnvStatus
 
 func (a *app) secretStore() (secrets.Store, error) {
 	if a.secrets != nil {
@@ -29,52 +23,17 @@ func (a *app) secretStore() (secrets.Store, error) {
 	return secrets.Default()
 }
 
-// envStatus reports, for every env var the tool declares, whether a value is
-// available. A value in the environment wins over a stored secret.
 func (a *app) envStatus(t *toolbox.Tool) []envStatus {
 	store, _ := a.secretStore()
-	var out []envStatus
-	for _, v := range t.Manifest.Env {
-		s := envStatus{Name: v.Name, Secret: v.Secret, Required: v.Required}
-		if _, ok := os.LookupEnv(v.Name); ok {
-			s.Set, s.Source = true, "env"
-		} else if v.Secret && store != nil {
-			if _, ok, _ := store.Get(t.Manifest.ID, v.Name); ok {
-				s.Set, s.Source = true, "store"
-			}
-		}
-		out = append(out, s)
-	}
-	return out
+	return workspace.Env(store, t)
 }
 
-// secretEnv returns NAME=value pairs for stored secrets that are not already
-// set in the environment.
 func (a *app) secretEnv(t *toolbox.Tool) ([]string, error) {
-	var out []string
-	var store secrets.Store
-	for _, v := range t.Manifest.Env {
-		if !v.Secret {
-			continue
-		}
-		if _, ok := os.LookupEnv(v.Name); ok {
-			continue
-		}
-		if store == nil {
-			var err error
-			if store, err = a.secretStore(); err != nil {
-				return nil, err
-			}
-		}
-		val, ok, err := store.Get(t.Manifest.ID, v.Name)
-		if err != nil {
-			return nil, fmt.Errorf("read secret %s: %w", v.Name, err)
-		}
-		if ok {
-			out = append(out, v.Name+"="+val)
-		}
+	store, err := a.secretStore()
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	return workspace.SecretEnv(store, t)
 }
 
 func (a *app) secretCmd() *cobra.Command {
@@ -92,7 +51,7 @@ func (a *app) declaredSecret(ref, name string) (*toolbox.Tool, error) {
 	if err != nil {
 		return nil, err
 	}
-	t, err := e.set.Resolve(ref)
+	t, err := e.Set.Resolve(ref)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +137,7 @@ func (a *app) secretListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := e.set.Resolve(args[0])
+			t, err := e.Set.Resolve(args[0])
 			if err != nil {
 				return err
 			}

@@ -23,7 +23,7 @@ func (a *app) searchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tools, _ := e.set.Tools()
+			tools, _ := e.Set.Tools()
 			hits := search.Rank(tools, strings.Join(args, " "))
 			if limit > 0 && len(hits) > limit {
 				hits = hits[:limit]

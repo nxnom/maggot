@@ -9,9 +9,9 @@ import (
 	"os/signal"
 	"strings"
 
-	"github.com/nxnom/maggot/internal/doctor"
 	"github.com/nxnom/maggot/internal/runner"
 	"github.com/nxnom/maggot/internal/toolbox"
+	"github.com/nxnom/maggot/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -39,7 +39,7 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 			if err != nil {
 				return err
 			}
-			t, err := e.set.Resolve(args[0])
+			t, err := e.Set.Resolve(args[0])
 			if err != nil {
 				return err
 			}
@@ -106,22 +106,12 @@ func argsFromInputs(t *toolbox.Tool, raw, outDir string) ([]string, error) {
 
 // preflight is the cheap version of doctor: binaries on PATH and required env.
 func (a *app) preflight(t *toolbox.Tool) error {
-	lookPath := exec.LookPath
+	var lookPath func(string) (string, error)
 	if a.doctor != nil {
 		lookPath = a.doctor.LookPath
 	}
-	var missing []string
-	for _, r := range doctor.Requirements(t.Manifest) {
-		if _, err := lookPath(r.Bin); err != nil {
-			missing = append(missing, "binary "+r.Bin)
-		}
-	}
-	for _, s := range a.envStatus(t) {
-		if s.Required && !s.Set {
-			missing = append(missing, "env "+s.Name)
-		}
-	}
-	if len(missing) > 0 {
+	store, _ := a.secretStore()
+	if missing := workspace.Missing(t, store, lookPath); len(missing) > 0 {
 		return fmt.Errorf("%s cannot run, missing: %s\nrun `maggot doctor %s` for install steps (or --skip-checks)",
 			t.Ref(), strings.Join(missing, ", "), t.Ref())
 	}

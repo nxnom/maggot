@@ -47,7 +47,7 @@ func (a *app) listCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tools, _ := e.set.Tools()
+			tools, _ := e.Set.Tools()
 			rows := []toolSummary{}
 			for _, t := range tools {
 				if category != "" && !hasCategory(t.Manifest, category) {
@@ -55,7 +55,7 @@ func (a *app) listCmd() *cobra.Command {
 				}
 				rows = append(rows, summarize(t))
 			}
-			problems := e.allProblems()
+			problems := e.AllProblems()
 			if asJSON {
 				if problems == nil {
 					problems = []toolbox.Problem{}
@@ -63,7 +63,7 @@ func (a *app) listCmd() *cobra.Command {
 				return writeJSON(a.stdout, map[string]any{"tools": rows, "problems": problems})
 			}
 			a.warnProblems(problems)
-			if len(e.set.Toolboxes) == 0 {
+			if len(e.Set.Toolboxes) == 0 {
 				fmt.Fprintln(a.stdout, "no toolboxes; create one with `maggot toolbox init <path>`")
 				return nil
 			}
@@ -104,7 +104,7 @@ func (a *app) infoCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := e.set.Resolve(args[0])
+			t, err := e.Set.Resolve(args[0])
 			if err != nil {
 				return err
 			}

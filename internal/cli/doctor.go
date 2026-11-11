@@ -63,10 +63,10 @@ pass --yes only after the user approved installing software.`,
 			}
 			var tools []*toolbox.Tool
 			if len(args) == 0 {
-				tools, _ = e.set.Tools()
+				tools, _ = e.Set.Tools()
 			} else {
 				for _, ref := range args {
-					t, err := e.set.Resolve(ref)
+					t, err := e.Set.Resolve(ref)
 					if err != nil {
 						return err
 					}

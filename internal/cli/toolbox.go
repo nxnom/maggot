@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"text/tabwriter"
 
@@ -83,13 +82,13 @@ func (a *app) register(path, name string, makeDefault bool) error {
 	if err != nil {
 		return err
 	}
-	if err := e.cfg.Add(name, path); err != nil {
+	if err := e.Config.Add(name, path); err != nil {
 		return err
 	}
 	if makeDefault {
-		e.cfg.Default = name
+		e.Config.Default = name
 	}
-	if err := e.cfg.Save(); err != nil {
+	if err := e.Config.Save(); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "registered toolbox %q (%s)\n", name, path)
@@ -116,8 +115,8 @@ func (a *app) toolboxListCmd() *cobra.Command {
 				Error   string `json:"error,omitempty"`
 			}
 			var rows []row
-			for _, ref := range e.cfg.Toolboxes {
-				r := row{Name: ref.Name, Path: ref.Path, Default: ref.Name == e.cfg.Default}
+			for _, ref := range e.Config.Toolboxes {
+				r := row{Name: ref.Name, Path: ref.Path, Default: ref.Name == e.Config.Default}
 				if tb, err := toolbox.Open(ref.Path, ref.Name); err != nil {
 					r.Error = err.Error()
 				} else {
@@ -130,7 +129,7 @@ func (a *app) toolboxListCmd() *cobra.Command {
 				if rows == nil {
 					rows = []row{}
 				}
-				return writeJSON(a.stdout, map[string]any{"toolboxes": rows, "config": e.cfg.Path()})
+				return writeJSON(a.stdout, map[string]any{"toolboxes": rows, "config": e.Config.Path()})
 			}
 			if len(rows) == 0 {
 				fmt.Fprintln(a.stdout, "no toolboxes registered; create one with `maggot toolbox init <path>`")
@@ -166,10 +165,10 @@ func (a *app) toolboxRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := e.cfg.Remove(args[0]); err != nil {
+			if err := e.Config.Remove(args[0]); err != nil {
 				return err
 			}
-			if err := e.cfg.Save(); err != nil {
+			if err := e.Config.Save(); err != nil {
 				return err
 			}
 			fmt.Fprintf(a.stdout, "unregistered toolbox %q\n", args[0])
@@ -188,26 +187,13 @@ func (a *app) toolboxDefaultCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := e.cfg.SetDefault(args[0]); err != nil {
+			if err := e.Config.SetDefault(args[0]); err != nil {
 				return err
 			}
-			return e.cfg.Save()
+			return e.Config.Save()
 		},
 	}
 }
 
-// targetToolbox is where new or imported tools go: --toolbox if given,
-// otherwise the default registered toolbox.
-func (a *app) targetToolbox(e *env) (*toolbox.Toolbox, error) {
-	if a.toolboxFlag != "" || os.Getenv("MAGGOT_TOOLBOX") != "" {
-		return e.set.Toolboxes[0], nil
-	}
-	if e.cfg.Default == "" {
-		return nil, fmt.Errorf("no default toolbox; create one with `maggot toolbox init <path>` or pass --toolbox")
-	}
-	tb, ok := e.set.Toolbox(e.cfg.Default)
-	if !ok {
-		return nil, fmt.Errorf("default toolbox %q is missing", e.cfg.Default)
-	}
-	return tb, nil
-}
+// targetToolbox is where new or imported tools go.
+func (a *app) targetToolbox(e *env) (*toolbox.Toolbox, error) { return e.Target() }

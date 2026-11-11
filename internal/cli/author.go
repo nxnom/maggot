@@ -75,7 +75,7 @@ func (a *app) toolDirArg(arg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	t, err := e.set.Resolve(arg)
+	t, err := e.Set.Resolve(arg)
 	if err != nil {
 		return "", fmt.Errorf("%s is not a tool folder and %w", arg, err)
 	}
