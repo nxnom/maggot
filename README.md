@@ -58,7 +58,7 @@ maggot run text-upper -- --upper --out out notes.txt
 | `try <folder>` | open a tool folder in the web UI to try it before importing |
 | `run <tool> --review -- …`, `take <run> <folder>` | hold output for review in the web UI, then move (not copy) the approved files into place |
 | `runs`, `runs rm <run>` | list or delete saved runs |
-| `open <tool>` | open a tool's folder in your code editor (`--folder` for the file manager) |
+| `open <tool>` | open a tool's folder in the file manager |
 | `clean [runs\|drafts\|uploads\|all]` | show or delete leftovers in the data folder (never toolboxes or projects) |
 | `test <dir\|tool>`, `test --all` | validate and run `tests/cases.json`; network and paid cases only run with `--network` / `--paid`. Results show in `list`, `info` and the UI |
 | `import <file\|dir>`, `export <tool>`, `pack <dir>`, `remove <tool>` | share tools as `.maggot` archives (zip files) |
@@ -76,7 +76,7 @@ registered.
 ## Files
 
 ```
-~/.config/maggot/config.json      registered toolboxes, default toolbox, runs_keep, editor
+~/.config/maggot/config.json      registered toolboxes, default toolbox, runs_keep
 <toolbox>/maggot.json             toolbox name (marks the folder as a toolbox)
 <toolbox>/tools/<id>/tool.json    one tool: entry, requires, env, inputs, outputs
 ```
@@ -99,9 +99,7 @@ maggot ui            # opens http://127.0.0.1:26244 in your browser
   in the file manager. The newest `runs_keep` runs per tool are kept (default 30).
 - Missing requirements can be installed from the tool page (after you confirm).
 - "About this tool and its code" shows the README and every file (read-only),
-  with buttons to open the folder or open it in your editor. The editor is
-  `editor` in `config.json` (e.g. `"code"` or `"cursor -n"`); when it is not
-  set, Cursor, VS Code, Zed, Sublime Text or Windsurf is used if installed.
+  with a button to open the tool folder.
 - Import `.maggot` files by dropping them on the page.
 - The server listens on 127.0.0.1 only and needs the token from the first
   link it prints (kept in the data dir, so bookmarks keep working).

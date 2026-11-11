@@ -297,7 +297,6 @@ async function toolPage(spec) {
       h("span", null, draft ? "Draft" : tool.ref),
       m.categories && m.categories.length ? h("span", null, m.categories.join(", ")) : null),
     h("div", { class: "actions" },
-      tool.editor ? h("button", { class: "btn small", type: "button", onclick: () => openTool(tool, "editor") }, `Open in ${tool.editor}`) : null,
       h("a", { class: "btn small", href: `/api/export?ref=${q(tool.ref)}` }, "Export"),
       draft ? null : h("button", { class: "btn small", type: "button", onclick: async () => {
         if (!(await confirmDialog(`Delete ${m.name}?`, h("div", null, h("p", null, "This deletes the tool folder:"), h("p", null, h("code", null, tool.dir))), "Delete tool", true))) return;
@@ -443,9 +442,7 @@ async function toolPage(spec) {
     h("summary", { class: "panel-head", style: "cursor:pointer" }, h("h2", null, "About this tool and its code")),
     h("div", { class: "panel-body" },
       h("div", { class: "row", style: "flex-wrap:wrap;margin-bottom:14px" },
-        h("button", { class: "btn small", type: "button", onclick: () => openTool(tool, "folder") }, "Show folder"),
-        h("button", { class: "btn small", type: "button", disabled: !tool.editor, title: tool.editor ? null : 'Set "editor" in config.json', onclick: () => openTool(tool, "editor") },
-          tool.editor ? `Open in ${tool.editor}` : "No editor found")),
+        h("button", { class: "btn small", type: "button", onclick: () => openTool(tool) }, "Show folder")),
       h("dl", { class: "kv" },
         h("dt", null, "Folder"), h("dd", null, h("code", null, tool.dir)),
         h("dt", null, "Without maggot"), h("dd", null, h("code", null, tool.direct + " …")),
@@ -473,8 +470,8 @@ async function toolPage(spec) {
   checkHealth(tool, reqs);
 }
 
-async function openTool(tool, how) {
-  try { await post("/api/tool/open", { ref: tool.ref, how }); } catch (e) { toast(e.message, true); }
+async function openTool(tool) {
+  try { await post("/api/tool/open", { ref: tool.ref }); } catch (e) { toast(e.message, true); }
 }
 
 // loadFiles shows the tool's files (read-only) with a code view.

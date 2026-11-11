@@ -533,9 +533,8 @@ func TestToolFilesViewer(t *testing.T) {
 		t.Fatal("png should be binary")
 	}
 	ts.do(t, "GET", "/api/tool/file?ref=worker&path=../../maggot.json", nil, 404, nil)
-	ts.do(t, "POST", "/api/tool/open", map[string]any{"ref": "worker", "how": "folder"}, 200, nil)
+	ts.do(t, "POST", "/api/tool/open", map[string]any{"ref": "worker"}, 200, nil)
 	if len(ts.opened) == 0 || ts.opened[len(ts.opened)-1] != dir {
 		t.Fatalf("open folder: %v", ts.opened)
 	}
-	ts.do(t, "POST", "/api/tool/open", map[string]any{"ref": "worker", "how": "nope"}, 400, nil)
 }

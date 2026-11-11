@@ -2,7 +2,6 @@ package ui
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -12,8 +11,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nxnom/maggot/internal/config"
-	"github.com/nxnom/maggot/internal/editor"
 	"github.com/nxnom/maggot/internal/manifest"
 )
 
@@ -129,9 +126,9 @@ func trimPartialRune(b []byte) []byte {
 	return b
 }
 
-// apiOpenTool opens the tool folder in the file manager or the code editor.
+// apiOpenTool opens the tool folder in the file manager.
 func (s *Server) apiOpenTool(w http.ResponseWriter, r *http.Request) error {
-	var req struct{ Ref, How string }
+	var req struct{ Ref string }
 	if err := readJSON(r, &req); err != nil {
 		return err
 	}
@@ -139,39 +136,8 @@ func (s *Server) apiOpenTool(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	switch req.How {
-	case "folder":
-		return okOr(w, s.open(t.Dir, false))
-	case "editor":
-		ed, err := s.editor()
-		if err != nil {
-			return err
-		}
-		return okOr(w, ed.Open(t.Dir))
-	}
-	return errors.New(`how must be "folder" or "editor"`)
-}
-
-func (s *Server) editor() (editor.Editor, error) {
-	cfg, err := config.Load()
-	if err != nil {
-		return editor.Editor{}, err
-	}
-	return editor.Find(cfg.Editor, nil)
-}
-
-func okOr(w http.ResponseWriter, err error) error {
-	if err != nil {
+	if err := s.open(t.Dir, false); err != nil {
 		return err
 	}
 	return ok(w, map[string]bool{"ok": true})
-}
-
-// editorName is shown on the "Open in …" button ("" when none is found).
-func (s *Server) editorName() string {
-	ed, err := s.editor()
-	if err != nil {
-		return ""
-	}
-	return ed.Name
 }

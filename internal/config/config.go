@@ -29,8 +29,6 @@ type Config struct {
 	Default   string       `json:"default_toolbox,omitempty"`
 	// RunsKeep is how many web UI runs to keep per tool (default 30).
 	RunsKeep int `json:"runs_keep,omitempty"`
-	// Editor opens tool folders, e.g. "code" or "cursor -n". Empty: auto-detect.
-	Editor string `json:"editor,omitempty"`
 
 	path string
 }
