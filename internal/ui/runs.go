@@ -545,6 +545,20 @@ func (m *Manager) Delete(id string) error {
 	return os.RemoveAll(filepath.Join(m.Root, id))
 }
 
+// DeleteAll removes every finished run of a tool and returns how many.
+func (m *Manager) DeleteAll(toolID string) int {
+	n := 0
+	for _, r := range m.List(toolID, 0) {
+		if _, running := m.Active(r.ID); running {
+			continue
+		}
+		if os.RemoveAll(filepath.Join(m.Root, r.ID)) == nil {
+			n++
+		}
+	}
+	return n
+}
+
 // prune keeps the newest m.Keep finished runs of a tool.
 func (m *Manager) prune(toolID string) {
 	runs := m.List(toolID, 0)

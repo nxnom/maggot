@@ -3,6 +3,7 @@ import { get, post, del, q, api } from "./api.js";
 import { pick } from "./picker.js";
 import { buildForm } from "./form.js";
 import { RunView } from "./run.js";
+import { renderMarkdown } from "./md.js";
 
 const side = document.getElementById("side");
 const main = document.getElementById("main");
@@ -301,8 +302,19 @@ async function toolPage(spec) {
 
   // run panel + history
   const history = h("ul", { class: "history" });
+  const deleteAll = h("button", { class: "btn small quiet danger", type: "button" }, "Delete all");
   const historyPanel = h("section", { class: "panel", "aria-label": "Past runs" },
-    h("div", { class: "panel-head" }, h("h2", null, "Past runs")), history);
+    h("div", { class: "panel-head" }, h("h2", null, "Past runs"), deleteAll), history);
+  deleteAll.addEventListener("click", async () => {
+    if (!(await confirmDialog(`Delete all runs of ${m.name}?`,
+      "This deletes every finished run of this tool and its output files. Runs still in progress are kept.", "Delete all", true))) return;
+    try {
+      const res = await del(`/api/runs?tool=${q(m.id)}`);
+      if (runView.meta && runView.meta.status !== "running") runView.idle();
+      toast(`Deleted ${res.deleted} run${res.deleted === 1 ? "" : "s"}.`);
+      loadHistory();
+    } catch (err) { toast(err.message, true); }
+  });
   const runView = new RunView({
     onFinish: (meta) => { loadHistory(meta.id); toast(meta.status === "succeeded" ? `${m.name} finished.` : `${m.name}: ${meta.status}.`, meta.status !== "succeeded"); },
     onReuse: (values) => { form.set(values); toast("Form filled from this run."); },
@@ -311,10 +323,28 @@ async function toolPage(spec) {
   async function loadHistory(activeId) {
     const { runs } = await get(`/api/runs?tool=${q(m.id)}&limit=15`);
     historyPanel.hidden = !runs.length;
-    clear(history, runs.map((r) => h("li", null, h("button", {
-      type: "button", "aria-current": String(r.id === activeId),
-      onclick: () => { runView.show(r.id); loadHistory(r.id); },
-    }, h("span", { class: "status " + r.status }), h("span", null, ago(r.started)), h("span", { class: "when" }, duration(r.started, r.ended))))));
+    clear(history, runs.map((r) => {
+      const running = r.status === "running";
+      const remove = h("button", {
+        class: "btn small quiet danger", type: "button", disabled: running,
+        title: running ? "Cancel the run before deleting it" : null,
+        "aria-label": `Delete run from ${ago(r.started)}`,
+      }, "Delete");
+      remove.addEventListener("click", async () => {
+        if (!(await confirmDialog("Delete this run?", "This deletes the run and its output files.", "Delete", true))) return;
+        try {
+          await del(`/api/runs/${r.id}`);
+          if (runView.id === r.id) runView.idle();
+          loadHistory(runView.id);
+        } catch (err) { toast(err.message, true); }
+      });
+      return h("li", null,
+        h("button", {
+          class: "pick", type: "button", "aria-current": String(r.id === activeId),
+          onclick: () => { runView.show(r.id); loadHistory(r.id); },
+        }, h("span", { class: "status " + r.status }), h("span", null, ago(r.started)), h("span", { class: "when" }, duration(r.started, r.ended))),
+        remove);
+    }));
   }
 
   formEl.addEventListener("submit", async (e) => {
@@ -338,7 +368,7 @@ async function toolPage(spec) {
         h("dt", null, "Folder"), h("dd", null, h("code", null, tool.dir)),
         h("dt", null, "Without maggot"), h("dd", null, h("code", null, tool.direct + " …")),
         h("dt", null, "From an agent"), h("dd", null, h("code", null, `maggot run ${tool.ref} -- …`))),
-      tool.readme ? h("pre", { class: "readme", style: "margin-top:16px" }, tool.readme) : null));
+      tool.readme ? h("div", { style: "margin-top:18px" }, renderMarkdown(tool.readme)) : null));
 
   clear(main,
     plate,

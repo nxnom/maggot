@@ -72,6 +72,15 @@ func (s *Server) apiRun(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, res)
 }
 
+// apiDeleteRuns deletes all finished runs of one tool (?tool=<id>).
+func (s *Server) apiDeleteRuns(w http.ResponseWriter, r *http.Request) error {
+	tool := r.URL.Query().Get("tool")
+	if tool == "" {
+		return errors.New("name a tool")
+	}
+	return ok(w, map[string]int{"deleted": s.runs.DeleteAll(tool)})
+}
+
 func (s *Server) apiCancelRun(w http.ResponseWriter, r *http.Request) error {
 	if err := s.runs.Cancel(r.PathValue("id")); err != nil {
 		return err

@@ -167,6 +167,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/uploads", s.apiUpload)
 	api("GET /api/runs", s.apiRuns)
 	api("POST /api/runs", s.apiStartRun)
+	api("DELETE /api/runs", s.apiDeleteRuns)
 	api("GET /api/runs/{id}", s.apiRun)
 	api("DELETE /api/runs/{id}", s.apiDeleteRun)
 	api("POST /api/runs/{id}/cancel", s.apiCancelRun)

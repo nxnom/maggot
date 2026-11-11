@@ -15,6 +15,8 @@ export class RunView {
 
   idle() {
     this.stop();
+    this.id = null;
+    this.meta = null;
     clear(this.el,
       h("div", { class: "panel-head" }, h("h2", null, "Run")),
       h("div", { class: "panel-body" }, h("p", { class: "muted", style: "margin:0" },

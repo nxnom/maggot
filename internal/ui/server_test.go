@@ -270,6 +270,23 @@ func TestRunOverHTTP(t *testing.T) {
 	ts.do(t, "POST", "/api/reveal", map[string]any{"run": meta.ID, "path": "../../x"}, 404, nil)
 	ts.do(t, "DELETE", "/api/runs/"+meta.ID, nil, 200, nil)
 	ts.do(t, "GET", "/api/runs/"+meta.ID, nil, 404, nil)
+
+	// Delete all runs of a tool.
+	for i := 0; i < 2; i++ {
+		var m RunMeta
+		ts.do(t, "POST", "/api/runs", map[string]any{"ref": "worker", "values": map[string]any{"name": "x"}}, 200, &m)
+		r, _ := ts.s.runs.Active(m.ID)
+		if r != nil {
+			<-r.Done()
+		}
+		time.Sleep(1100 * time.Millisecond) // run ids are per second
+	}
+	var deleted struct{ Deleted int }
+	ts.do(t, "DELETE", "/api/runs?tool=worker", nil, 200, &deleted)
+	if deleted.Deleted != 2 {
+		t.Fatalf("deleted %d", deleted.Deleted)
+	}
+	ts.do(t, "DELETE", "/api/runs", nil, 400, nil)
 }
 
 func TestRunPreflightAndValidation(t *testing.T) {
