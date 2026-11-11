@@ -2,9 +2,12 @@ package skill
 
 import (
 	"os"
+
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestRepoCopyMatchesEmbedded(t *testing.T) {
@@ -17,17 +20,31 @@ func TestRepoCopyMatchesEmbedded(t *testing.T) {
 	}
 }
 
+// TestFrontmatter parses the frontmatter with a strict YAML parser, like the
+// skill installers do (an unquoted ": " in the description broke them).
 func TestFrontmatter(t *testing.T) {
-	if !strings.HasPrefix(Text, "---\nname: maggot\ndescription: ") {
-		t.Fatal("SKILL.md must start with name and description frontmatter")
+	if !strings.HasPrefix(Text, "---\n") {
+		t.Fatal("SKILL.md must start with frontmatter")
 	}
 	end := strings.Index(Text[4:], "\n---\n")
 	if end < 0 {
 		t.Fatal("frontmatter not closed")
 	}
-	desc := Text[4 : 4+end]
-	if len(desc) > 1024 {
-		t.Fatalf("frontmatter too long: %d", len(desc))
+	var fm map[string]any
+	dec := yaml.NewDecoder(strings.NewReader(Text[4 : 4+end]))
+	dec.KnownFields(true)
+	if err := dec.Decode(&fm); err != nil {
+		t.Fatalf("frontmatter is not valid YAML: %v", err)
+	}
+	if fm["name"] != "maggot" {
+		t.Fatalf("name = %v", fm["name"])
+	}
+	desc, _ := fm["description"].(string)
+	if desc == "" || len(desc) > 1024 || !strings.Contains(desc, "search maggot first") {
+		t.Fatalf("description (%d chars): %q", len(desc), desc)
+	}
+	if len(fm) != 2 {
+		t.Fatalf("only name and description expected, got %v", fm)
 	}
 }
 
