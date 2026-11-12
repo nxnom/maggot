@@ -797,9 +797,9 @@ func (m *Manager) Cancel(id string) error {
 	return nil
 }
 
-// StopAll cancels every run this process owns and waits for them (used on
-// shutdown; UI runs are detached and not affected,
-// because runs live in their own process groups and do not get Ctrl-C).
+// StopAll cancels every run this process owns and waits for them. Those
+// runs live in their own process groups and do not get Ctrl-C. Detached UI
+// runs belong to their own process and are not affected.
 func (m *Manager) StopAll(timeout time.Duration) {
 	m.mu.Lock()
 	runs := make([]*Run, 0, len(m.active))
