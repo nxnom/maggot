@@ -224,6 +224,34 @@ func (s *Server) fsPath(p string) (string, error) {
 	return p, nil
 }
 
+// apiFSMedia serves a local image, video or audio file so the form can
+// preview the files chosen for a tool. Other kinds of files are refused.
+func (s *Server) apiFSMedia(w http.ResponseWriter, r *http.Request) error {
+	p := config.ExpandHome(r.URL.Query().Get("path"))
+	if !filepath.IsAbs(p) {
+		return errors.New("path must be absolute")
+	}
+	p = filepath.Clean(p)
+	mt := mimeOf(p)
+	if kind, _, _ := strings.Cut(mt, "/"); kind != "image" && kind != "video" && kind != "audio" {
+		return &httpError{code: http.StatusUnsupportedMediaType, msg: "only images, video and audio can be previewed"}
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return os.ErrNotExist
+	}
+	w.Header().Set("Content-Type", mt)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Security-Policy", "sandbox") // svg can hold scripts
+	http.ServeContent(w, r, filepath.Base(p), info.ModTime(), f)
+	return nil
+}
+
 func (s *Server) apiFS(w http.ResponseWriter, r *http.Request) error {
 	q := r.URL.Query()
 	p, err := s.fsPath(q.Get("path"))

@@ -158,6 +158,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/toolboxes/{name}/default", s.apiDefaultToolbox)
 	api("GET /api/fs", s.apiFS)
 	api("GET /api/fs/find", s.apiFSFind)
+	api("GET /api/fs/media", s.apiFSMedia)
 	api("GET /api/search", s.apiSearch)
 	api("GET /api/tool", s.apiTool)
 	api("DELETE /api/tool", s.apiRemoveTool)

@@ -229,6 +229,30 @@ a { color: var(--green); }
 .file-rows li:last-child { border-bottom: 0; }
 .file-rows .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 
+/* Input files: a preview of the chosen image/video/audio, and small
+   thumbnails in file lists. Click opens the popup viewer. */
+.drop.paste:focus { outline: none; }
+.drop.paste:focus-within { border-color: var(--green); }
+.in-preview { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 12px; margin-top: 8px; }
+.in-preview img, .in-preview video { display: block; max-width: 100%; max-height: 180px; border-radius: 3px; background: var(--line); }
+.in-preview audio { width: min(100%, 420px); }
+.in-preview-img { padding: 0; border: 0; background: none; cursor: zoom-in; max-width: 100%; }
+.in-preview-img:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.in-preview .muted { font-size: 12.5px; }
+.in-preview-bad { margin: 0; font-size: 13px; color: var(--red); }
+.file-thumb { flex: none; width: 40px; height: 40px; border-radius: 3px; overflow: hidden; background: var(--line);
+  display: grid; place-items: center; color: var(--ink-2); font-size: 16px; }
+.file-thumb:empty { visibility: hidden; }
+.file-thumb img, .file-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.file-thumb-bad { color: var(--red); font-weight: 700; }
+.file-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left;
+  padding: 2px 4px; border: 0; background: none; color: inherit; font: inherit; border-radius: 3px; }
+button.file-open { cursor: zoom-in; }
+button.file-open:hover .file-name { text-decoration: underline; }
+button.file-open:focus-visible { outline: 2px solid var(--focus); }
+.file-open .file-name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-open .path { font-size: 12px; }
+
 details.advanced { margin: 4px 0 14px; }
 details.advanced > summary { cursor: pointer; color: var(--ink-2); font-weight: 600; font-size: 14px; padding: 4px 0; }
 details.advanced[open] > summary { margin-bottom: 10px; }
@@ -467,7 +491,7 @@ dialog::backdrop { background: rgba(16, 24, 20, .45); }
 @media (max-width: 900px) {
   .main.tool-main { height: auto; overflow: visible; }
   .tp-panel { overflow: visible; }
-  .tp-split, .tp-split-list, .tp-panel-code .code-browser { grid-template-columns: 1fr; height: auto; }
+  .tp-split, .tp-split-list, .tp-panel-code .code-browser { grid-template-columns: minmax(0, 1fr); height: auto; }
   .tp-form { border-right: 0; border-bottom: 1px solid var(--line); }
   .tp-form > .form-body, .tp-result, .tp-list { overflow: visible; }
   .tp-dock { position: sticky; bottom: 0; }

@@ -738,3 +738,40 @@ func TestSecretsCarryOverFromDraft(t *testing.T) {
 		return nil
 	})
 }
+
+func TestFSMedia(t *testing.T) {
+	ts := newTestServer(t)
+	dir := t.TempDir()
+	png := filepath.Join(dir, "a.png")
+	os.WriteFile(png, []byte("\x89PNG\r\n\x1a\nfake"), 0o644)
+	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("secret"), 0o644)
+	get := func(p string) *http.Response {
+		r, err := ts.client.Get(ts.URL + "/api/fs/media?path=" + url.QueryEscape(p))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		return r
+	}
+	if r := get(png); r.StatusCode != 200 || r.Header.Get("Content-Type") != "image/png" || r.Header.Get("Content-Security-Policy") != "sandbox" {
+		t.Fatalf("png: %d %v", r.StatusCode, r.Header)
+	}
+	if r := get(filepath.Join(dir, "notes.txt")); r.StatusCode != http.StatusUnsupportedMediaType {
+		t.Fatalf("txt served: %d", r.StatusCode)
+	}
+	if r := get(filepath.Join(dir, "gone.png")); r.StatusCode != 404 {
+		t.Fatalf("missing: %d", r.StatusCode)
+	}
+	if r := get("rel/a.png"); r.StatusCode != 400 {
+		t.Fatalf("relative: %d", r.StatusCode)
+	}
+	os.Mkdir(filepath.Join(dir, "d.png"), 0o755)
+	if r := get(filepath.Join(dir, "d.png")); r.StatusCode != 404 {
+		t.Fatalf("dir: %d", r.StatusCode)
+	}
+	// Without the cookie: refused.
+	r, _ := http.Get(ts.URL + "/api/fs/media?path=" + url.QueryEscape(png))
+	if r.StatusCode != 401 {
+		t.Fatalf("no auth: %d", r.StatusCode)
+	}
+}

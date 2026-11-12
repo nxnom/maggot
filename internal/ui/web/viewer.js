@@ -81,8 +81,44 @@ export function renderOutputs(el, runId, files) {
     files.length > shown.length ? h("p", { class: "muted" }, `Showing the first ${shown.length} of ${files.length} files. Use Show folder for the rest.`) : null);
 }
 
+// Local files (inputs chosen in the form) are shown through /api/fs/media,
+// which serves only images, video and audio.
+const EXT_MIME = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
+  bmp: "image/bmp", avif: "image/avif", svg: "image/svg+xml", tif: "image/tiff", tiff: "image/tiff",
+  mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", webm: "video/webm", mkv: "video/x-matroska",
+  mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", opus: "audio/ogg",
+  flac: "audio/flac", aac: "audio/aac",
+};
+
+export function localFile(path) {
+  const ext = (path.split(".").pop() || "").toLowerCase();
+  return { path, name: path.split(/[/\\]/).pop(), mime: EXT_MIME[ext] || "application/octet-stream" };
+}
+
+export const mediaURL = (path) => "/api/fs/media?path=" + encodeURIComponent(path);
+
+// localKind is image, video, audio or "" for a local path.
+export function localKind(path) {
+  const k = kindOf(localFile(path));
+  return ["image", "video", "audio"].includes(k) ? k : "";
+}
+
+// openLocalViewer shows local files in the popup viewer.
+export function openLocalViewer(paths, index) {
+  const files = paths.map(localFile);
+  openViewer(null, files, index, {
+    url: (f) => mediaURL(f.path),
+    actions: (f) => [h("a", { class: "btn small", href: mediaURL(f.path), target: "_blank", rel: "noopener" }, "Open in new tab")],
+  });
+}
+
 // openViewer shows files[index] in a popup. ←/→ move between files, Esc closes.
-export function openViewer(runId, files, index) {
+// src changes where files come from (default: the run's output folder).
+export function openViewer(runId, files, index, src) {
+  const urlOf = src ? src.url : (f) => fileURL(runId, f.path);
+  const actsOf = src ? src.actions : (f) => actions(runId, f);
+  const sizeOf = (f) => (f.size === undefined ? "" : bytes(f.size));
   let i = index;
   const stage = h("div", { class: "viewer-stage" });
   const title = h("span", { class: "viewer-title" });
@@ -97,15 +133,21 @@ export function openViewer(runId, files, index) {
 
   async function show() {
     const f = files[i];
-    const url = fileURL(runId, f.path);
-    title.textContent = f.path;
-    count.textContent = files.length > 1 ? `${i + 1} / ${files.length} · ${bytes(f.size)}` : bytes(f.size);
-    clear(acts, actions(runId, f));
+    const url = urlOf(f);
+    title.textContent = f.name || f.path;
+    title.title = f.path;
+    count.textContent = [files.length > 1 ? `${i + 1} / ${files.length}` : "", sizeOf(f)].filter(Boolean).join(" · ");
+    clear(acts, actsOf(f));
     prev.hidden = next.hidden = files.length < 2;
     stage.querySelectorAll("video, audio").forEach((m) => m.pause());
     const kind = kindOf(f);
-    if (kind === "image") return clear(stage, h("img", { src: url, alt: f.path }));
-    if (kind === "video") return clear(stage, h("video", { src: url, controls: true, autoplay: true, playsinline: true }));
+    if (src && kind !== "image" && kind !== "video" && kind !== "audio") {
+      return clear(stage, h("div", { class: "viewer-none" }, extBadge(f), h("p", null, "No preview for this kind of file.")));
+    }
+    const missing = () => clear(stage, h("div", { class: "viewer-none" }, extBadge(f),
+      h("p", null, "Cannot open this file. Check that the path is right.")));
+    if (kind === "image") return clear(stage, h("img", { src: url, alt: f.path, onerror: missing }));
+    if (kind === "video") return clear(stage, h("video", { src: url, controls: true, autoplay: true, playsinline: true, onerror: missing }));
     if (kind === "audio") return clear(stage, h("div", { class: "viewer-audio" }, extBadge(f), h("audio", { src: url, controls: true, autoplay: true })));
     if (kind === "pdf") return clear(stage, h("iframe", { src: url, title: f.path }));
     if (kind === "text" && f.size <= TEXT_MAX) {
@@ -121,7 +163,7 @@ export function openViewer(runId, files, index) {
     }
     clear(stage, h("div", { class: "viewer-none" }, extBadge(f),
       h("p", null, kind === "text" ? "This file is too large to preview here." : "No preview for this kind of file."),
-      h("a", { class: "btn green", href: fileURL(runId, f.path, true) }, "Download")));
+      runId ? h("a", { class: "btn green", href: fileURL(runId, f.path, true) }, "Download") : null));
   }
   const go = (d) => { i = (i + d + files.length) % files.length; show(); };
   prev.addEventListener("click", () => go(-1));
