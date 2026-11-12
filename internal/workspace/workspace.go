@@ -100,10 +100,11 @@ func Load(selector, cwd string) (*Workspace, error) {
 	return w, nil
 }
 
-// AllProblems merges toolbox-level and tool-level problems.
+// AllProblems merges toolbox-level, tool-level and skill-level problems.
 func (w *Workspace) AllProblems() []toolbox.Problem {
 	_, p := w.Set.Tools()
-	return append(append([]toolbox.Problem{}, w.Problems...), p...)
+	_, sp := w.Set.Skills()
+	return append(append(append([]toolbox.Problem{}, w.Problems...), p...), sp...)
 }
 
 // Target is where new or imported tools go: the selected toolbox, otherwise

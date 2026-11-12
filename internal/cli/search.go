@@ -15,7 +15,10 @@ func (a *app) searchCmd() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "search <words...>",
-		Short: "Find tools by what they do (matches id, name, tags, description, inputs)",
+		Short: "Find tools and skills by what they do (matches id, name, tags, description, inputs)",
+		Long: `Find tools and skills by what they do. Tools are programs maggot runs
+(maggot run). Skills are step-by-step instructions for agents, often using
+several tools and scripts (maggot skill show).`,
 		Example: `  maggot search remove image background
   maggot search convert video --json`,
 		Args: cobra.MinimumNArgs(1),
@@ -28,6 +31,20 @@ func (a *app) searchCmd() *cobra.Command {
 			hits := search.Rank(tools, strings.Join(args, " "))
 			if limit > 0 && len(hits) > limit {
 				hits = hits[:limit]
+			}
+			skills, _ := e.Set.Skills()
+			skillHits := search.RankSkills(skills, strings.Join(args, " "))
+			if limit > 0 && len(skillHits) > limit {
+				skillHits = skillHits[:limit]
+			}
+			type skillRow struct {
+				skillSummary
+				Score   int      `json:"score"`
+				Matched []string `json:"matched"`
+			}
+			skillRows := []skillRow{}
+			for _, h := range skillHits {
+				skillRows = append(skillRows, skillRow{a.summarizeSkill(e, h.Skill), h.Score, h.Matched})
 			}
 			query := strings.Join(args, " ")
 			tested, _ := testlog.Load()
@@ -49,8 +66,8 @@ func (a *app) searchCmd() *cobra.Command {
 				for _, h := range hits {
 					rows = append(rows, row{summarize(h.Tool, tested), h.Score, h.Matched})
 				}
-				out := map[string]any{"query": query, "results": rows}
-				if len(hits) == 0 {
+				out := map[string]any{"query": query, "results": rows, "skills": skillRows}
+				if len(hits) == 0 && len(skillHits) == 0 {
 					if closest == nil {
 						closest = []toolSummary{}
 					}
@@ -58,6 +75,16 @@ func (a *app) searchCmd() *cobra.Command {
 					out["hint"] = "no tool matched the words; check the closest tools, try other words (what the tool does, file formats), or build a new tool"
 				}
 				return writeJSON(a.stdout, out)
+			}
+			if len(skillRows) > 0 {
+				w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+				fmt.Fprintln(w, "SKILL\tMATCHED\tDESCRIPTION")
+				for _, r := range skillRows {
+					fmt.Fprintf(w, "%s\t%s\t%s\n", r.Ref, strings.Join(r.Matched, ","), oneLine(r.Description, 100))
+				}
+				w.Flush()
+				fmt.Fprintln(a.stdout, "(skills are steps for agents: read one with `maggot skill show <name>`)")
+				fmt.Fprintln(a.stdout)
 			}
 			if len(hits) == 0 {
 				fmt.Fprintln(a.stdout, "no matching tools")

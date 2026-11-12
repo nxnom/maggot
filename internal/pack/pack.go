@@ -1,5 +1,5 @@
-// Package pack exports a tool folder to a .maggot archive (a zip file) and
-// imports archives or folders into a toolbox.
+// Package pack exports a tool or skill folder to a .maggot archive (a zip
+// file) and imports archives or folders into a toolbox.
 package pack
 
 import (
@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/nxnom/maggot/internal/agentskill"
 	"github.com/nxnom/maggot/internal/manifest"
 )
 
@@ -40,19 +41,40 @@ var zipTime = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 // FileName is the default archive name for a manifest.
 func FileName(m *manifest.Manifest) string { return m.ID + "-" + m.Version + Ext }
 
+// SkillFileName is the default archive name for a skill.
+func SkillFileName(sk *agentskill.Skill) string {
+	if sk.Version == "" {
+		return sk.Meta.Name + Ext
+	}
+	return sk.Meta.Name + "-" + sk.Version + Ext
+}
+
 // Pack writes the tool in dir to out. The manifest must be valid.
 func Pack(dir, out string) (*manifest.Manifest, error) {
 	m, err := manifest.Load(dir)
 	if err != nil {
 		return nil, err
 	}
-	files, err := collect(dir)
+	return m, writeZip(dir, out)
+}
+
+// PackSkill writes the skill in dir to out. SKILL.md must be valid.
+func PackSkill(dir, out string) (*agentskill.Skill, error) {
+	sk, err := agentskill.Load(dir)
 	if err != nil {
 		return nil, err
 	}
+	return sk, writeZip(dir, out)
+}
+
+func writeZip(dir, out string) error {
+	files, err := collect(dir)
+	if err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(out), ".pack-*")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer os.Remove(tmp.Name())
 	zw := zip.NewWriter(tmp)
@@ -60,17 +82,17 @@ func Pack(dir, out string) (*manifest.Manifest, error) {
 		if err := addFile(zw, dir, rel); err != nil {
 			zw.Close()
 			tmp.Close()
-			return nil, err
+			return err
 		}
 	}
 	if err := zw.Close(); err != nil {
 		tmp.Close()
-		return nil, err
+		return err
 	}
 	if err := tmp.Close(); err != nil {
-		return nil, err
+		return err
 	}
-	return m, os.Rename(tmp.Name(), out)
+	return os.Rename(tmp.Name(), out)
 }
 
 func loadIgnore(dir string) []string {
@@ -171,9 +193,20 @@ func addFile(zw *zip.Writer, dir, rel string) error {
 	return err
 }
 
+// Kinds of things an archive or folder can hold.
+const (
+	KindTool  = "tool"
+	KindSkill = "skill"
+)
+
 // Preview describes what an import would do, for the confirmation prompt.
 type Preview struct {
-	Manifest *manifest.Manifest `json:"manifest"`
+	// Kind is "tool" (Manifest is set) or "skill" (Skill is set).
+	Kind     string             `json:"kind"`
+	ID       string             `json:"id"`
+	Version  string             `json:"version"`
+	Manifest *manifest.Manifest `json:"manifest,omitempty"`
+	Skill    *agentskill.Skill  `json:"skill,omitempty"`
 	Files    int                `json:"files"`
 	Bytes    int64              `json:"bytes"`
 	Target   string             `json:"target"`
@@ -191,8 +224,26 @@ type Staged struct {
 }
 
 // Stage extracts an archive (.maggot / .zip) or copies a folder into a
-// hidden temp folder inside toolsDir and validates it.
+// hidden temp folder inside toolsDir and validates it. A tool goes to
+// toolsDir; a skill goes to the skills folder next to it.
 func Stage(src, toolsDir string) (*Staged, error) {
+	return StageIn(src, toolsDir, filepath.Join(filepath.Dir(toolsDir), "skills"))
+}
+
+// KindOf says whether dir holds a tool (tool.json) or a skill (SKILL.md),
+// or "" for neither. A folder with both is a tool.
+func KindOf(dir string) string {
+	if _, err := os.Stat(filepath.Join(dir, manifest.FileName)); err == nil {
+		return KindTool
+	}
+	if agentskill.Exists(dir) {
+		return KindSkill
+	}
+	return ""
+}
+
+// StageIn is Stage with an explicit skills folder.
+func StageIn(src, toolsDir, skillsDir string) (*Staged, error) {
 	info, err := os.Stat(src)
 	if err != nil {
 		return nil, err
@@ -217,13 +268,38 @@ func Stage(src, toolsDir string) (*Staged, error) {
 	if err != nil {
 		return fail(err)
 	}
+	s.Action = "install"
+	if KindOf(tmp) == KindSkill {
+		sk, err := agentskill.Load(tmp)
+		if err != nil {
+			return fail(err)
+		}
+		if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+			return fail(err)
+		}
+		s.Kind, s.Skill, s.ID, s.Version = KindSkill, sk, sk.Meta.Name, sk.Version
+		s.Target = filepath.Join(skillsDir, sk.Meta.Name)
+		if old, err := agentskill.Load(s.Target); err == nil {
+			s.Existing = old.Version
+			if s.Existing == "" {
+				s.Existing = "unknown"
+			}
+			s.Action = compare(sk.Version, old.Version)
+		} else if _, statErr := os.Stat(s.Target); statErr == nil {
+			s.Existing = "unknown"
+			s.Action = "reinstall"
+		}
+		return s, nil
+	}
 	m, err := manifest.Load(tmp)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			err = fmt.Errorf("%s has no %s (tool) or %s (skill)", src, manifest.FileName, agentskill.FileName)
+		}
 		return fail(err)
 	}
-	s.Manifest = m
+	s.Kind, s.Manifest, s.ID, s.Version = KindTool, m, m.ID, m.Version
 	s.Target = filepath.Join(toolsDir, m.ID)
-	s.Action = "install"
 	if old, err := manifest.Load(s.Target); err == nil {
 		s.Existing = old.Version
 		s.Action = compare(m.Version, old.Version)
@@ -296,12 +372,12 @@ func extract(src, dst string, p *Preview) error {
 	defer zr.Close()
 
 	// Accept archives made by zipping the folder itself: one top folder that
-	// holds tool.json.
+	// holds tool.json or SKILL.md.
 	prefix := ""
 	hasRootManifest := false
 	tops := map[string]bool{}
 	for _, f := range zr.File {
-		if f.Name == manifest.FileName {
+		if f.Name == manifest.FileName || f.Name == agentskill.FileName {
 			hasRootManifest = true
 		}
 		if strings.HasPrefix(f.Name, "__MACOSX/") {
@@ -388,8 +464,8 @@ func writeEntry(f *zip.File, target string, mode fs.FileMode, budget int64) (int
 	return n, nil
 }
 
-// CopyTool copies a tool folder to dst (which must not exist), leaving out
-// the same files as archives do.
+// CopyTool copies a tool or skill folder to dst (which must not exist),
+// leaving out the same files as archives do.
 func CopyTool(src, dst string) error {
 	if _, err := os.Stat(dst); err == nil {
 		return fmt.Errorf("%s already exists", dst)

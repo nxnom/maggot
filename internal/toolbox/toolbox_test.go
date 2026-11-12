@@ -95,3 +95,41 @@ func TestFindUp(t *testing.T) {
 		t.Fatalf("FindUp = %q %v, want %q", got, ok, want)
 	}
 }
+
+func TestSkills(t *testing.T) {
+	dir := t.TempDir()
+	tb, err := Init(dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(folder, text string) {
+		p := filepath.Join(dir, SkillsDir, folder)
+		os.MkdirAll(p, 0o755)
+		os.WriteFile(filepath.Join(p, "SKILL.md"), []byte(text), 0o644)
+	}
+	write("good", "---\nname: good\ndescription: A good skill.\n---\nsteps\n")
+	write("renamed", "---\nname: other\ndescription: x\n---\n")
+	os.MkdirAll(filepath.Join(dir, SkillsDir, "empty"), 0o755)
+
+	set := &Set{Toolboxes: []*Toolbox{tb}}
+	skills, problems := set.Skills()
+	if len(skills) != 1 || skills[0].Ref() != "main/good" || len(problems) != 1 {
+		t.Fatalf("skills %v problems %v", skills, problems)
+	}
+	if sk, err := set.ResolveSkill("good"); err != nil || sk.Body != "steps\n" {
+		t.Fatalf("resolve: %v", err)
+	}
+	if _, err := set.ResolveSkill("main/good"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := set.ResolveSkill("renamed"); err == nil || !strings.Contains(err.Error(), "broken") {
+		t.Fatalf("broken: %v", err)
+	}
+	if _, err := set.ResolveSkill("goo"); err == nil || !strings.Contains(err.Error(), "did you mean: main/good") {
+		t.Fatalf("similar: %v", err)
+	}
+	// Skill problems do not make a tool of the same name look broken.
+	if _, err := set.Resolve("renamed"); err == nil || strings.Contains(err.Error(), "broken") {
+		t.Fatalf("tool resolve: %v", err)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nxnom/maggot/internal/agentskill"
 	"github.com/nxnom/maggot/internal/config"
 	"github.com/nxnom/maggot/internal/manifest"
 	"github.com/spf13/cobra"
@@ -37,7 +38,7 @@ func (a *app) cleanCmd() *cobra.Command {
 space it uses. With a kind, delete it (asks first; --yes to skip):
 
   runs     web UI run folders and their output files
-  drafts   tool drafts (all, or the ids you name)
+  drafts   tool and skill drafts (all, or the ids you name)
   uploads  files dropped into the web UI
   all      all of the above
 
@@ -199,6 +200,10 @@ func cleanItems() ([]cleanItem, error) {
 			return "", false
 		}
 		return meta.ToolID, true
+	})
+	skillDrafts, _ := config.SkillDraftsDir()
+	list("drafts", skillDrafts, func(name, p string) (string, bool) {
+		return "", agentskill.Exists(p)
 	})
 	drafts, _ := config.DraftsDir()
 	list("drafts", drafts, func(name, p string) (string, bool) {

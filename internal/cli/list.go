@@ -51,7 +51,7 @@ func (a *app) listCmd() *cobra.Command {
 	var category string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List tools in all toolboxes",
+		Short: "List tools and skills in all toolboxes",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := a.loadEnv()
@@ -68,26 +68,44 @@ func (a *app) listCmd() *cobra.Command {
 				rows = append(rows, summarize(t, tested))
 			}
 			problems := e.AllProblems()
+			skills, _ := e.Set.Skills()
+			skillRows := []skillSummary{}
+			if category == "" {
+				for _, sk := range skills {
+					skillRows = append(skillRows, a.summarizeSkill(e, sk))
+				}
+			}
 			if asJSON {
 				if problems == nil {
 					problems = []toolbox.Problem{}
 				}
-				return writeJSON(a.stdout, map[string]any{"tools": rows, "problems": problems})
+				return writeJSON(a.stdout, map[string]any{"tools": rows, "skills": skillRows, "problems": problems})
 			}
 			a.warnProblems(problems)
 			if len(e.Set.Toolboxes) == 0 {
 				fmt.Fprintln(a.stdout, "no toolboxes; create one with `maggot toolbox init <path>`")
 				return nil
 			}
-			if len(rows) == 0 {
+			if len(rows) == 0 && len(skillRows) == 0 {
 				fmt.Fprintln(a.stdout, "no tools")
 				return nil
 			}
 			w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "TOOL\tVERSION\tTESTED\tDESCRIPTION")
-			now := time.Now()
-			for _, r := range rows {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, r.Version, testlog.Label(r.LastTest, r.Version, now), r.Description)
+			if len(rows) > 0 {
+				fmt.Fprintln(w, "TOOL\tVERSION\tTESTED\tDESCRIPTION")
+				now := time.Now()
+				for _, r := range rows {
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, r.Version, testlog.Label(r.LastTest, r.Version, now), r.Description)
+				}
+			}
+			if len(skillRows) > 0 {
+				if len(rows) > 0 {
+					fmt.Fprintln(w, "\t\t\t")
+				}
+				fmt.Fprintln(w, "SKILL\tVERSION\tREADY\tDESCRIPTION")
+				for _, r := range skillRows {
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, dash(r.Version), readyLabel(r.Ready, r.Missing), oneLine(r.Description, 90))
+				}
 			}
 			return w.Flush()
 		},

@@ -1,8 +1,9 @@
-// Package search ranks tools against a free-text query with plain word
+// Package search ranks tools and skills against a free-text query with plain word
 // matching over the manifest. No index or embeddings: toolboxes are small.
 package search
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"unicode"
@@ -73,6 +74,41 @@ func fields(t *toolbox.Tool) []field {
 	}
 }
 
+// score matches query words against weighted fields.
+func score(fs []field, q []string) (int, []string) {
+	total := 0
+	var matched []string
+	for _, qw := range q {
+		best := 0
+		for _, f := range fs {
+			for _, w := range f.words {
+				if wordMatch(qw, w) && f.weight > best {
+					best = f.weight
+					if qw == w {
+						best++ // exact word beats prefix
+					}
+				}
+			}
+		}
+		if best > 0 {
+			total += best
+			matched = append(matched, qw)
+		}
+	}
+	return total, matched
+}
+
+// better orders hits: more matched words first, then higher score, then ref.
+func better(am, as int, aref string, bm, bs int, bref string) bool {
+	if am != bm {
+		return am > bm
+	}
+	if as != bs {
+		return as > bs
+	}
+	return aref < bref
+}
+
 // Rank returns tools that match at least one query word, best first: more
 // matched words first, then higher score, then id.
 func Rank(tools []*toolbox.Tool, query string) []Hit {
@@ -82,38 +118,51 @@ func Rank(tools []*toolbox.Tool, query string) []Hit {
 	}
 	var hits []Hit
 	for _, t := range tools {
-		fs := fields(t)
-		h := Hit{Tool: t}
-		for _, qw := range q {
-			best := 0
-			for _, f := range fs {
-				for _, w := range f.words {
-					if wordMatch(qw, w) && f.weight > best {
-						best = f.weight
-						if qw == w {
-							best++ // exact word beats prefix
-						}
-					}
-				}
-			}
-			if best > 0 {
-				h.Score += best
-				h.Matched = append(h.Matched, qw)
-			}
-		}
-		if h.Score > 0 {
-			hits = append(hits, h)
+		if sc, matched := score(fields(t), q); sc > 0 {
+			hits = append(hits, Hit{Tool: t, Score: sc, Matched: matched})
 		}
 	}
 	sort.SliceStable(hits, func(i, j int) bool {
 		a, b := hits[i], hits[j]
-		if len(a.Matched) != len(b.Matched) {
-			return len(a.Matched) > len(b.Matched)
+		return better(len(a.Matched), a.Score, a.Tool.Ref(), len(b.Matched), b.Score, b.Tool.Ref())
+	})
+	return hits
+}
+
+type SkillHit struct {
+	Skill   *toolbox.Skill
+	Score   int
+	Matched []string
+}
+
+func skillFields(sk *toolbox.Skill) []field {
+	tags := ""
+	if v, ok := sk.Meta.Metadata["tags"]; ok {
+		tags = fmt.Sprint(v)
+	}
+	return []field{
+		{6, Words(sk.Meta.Name)},
+		{4, Words(tags)},
+		{3, Words(sk.Meta.Description)},
+		{1, Words(strings.Join(sk.Uses, " "))},
+	}
+}
+
+// RankSkills is Rank for skills: it matches the name, tags and description.
+func RankSkills(skills []*toolbox.Skill, query string) []SkillHit {
+	q := Words(query)
+	if len(q) == 0 {
+		return nil
+	}
+	var hits []SkillHit
+	for _, sk := range skills {
+		if sc, matched := score(skillFields(sk), q); sc > 0 {
+			hits = append(hits, SkillHit{Skill: sk, Score: sc, Matched: matched})
 		}
-		if a.Score != b.Score {
-			return a.Score > b.Score
-		}
-		return a.Tool.Ref() < b.Tool.Ref()
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		a, b := hits[i], hits[j]
+		return better(len(a.Matched), a.Score, a.Skill.Ref(), len(b.Matched), b.Score, b.Skill.Ref())
 	})
 	return hits
 }

@@ -1,7 +1,8 @@
-// Package toolbox finds tools inside toolbox folders.
+// Package toolbox finds tools and skills inside toolbox folders.
 //
 // A toolbox is any folder with a maggot.json file and a tools/ folder.
-// Every tools/<id>/ folder with a tool.json is one tool.
+// Every tools/<id>/ folder with a tool.json is one tool. Every
+// skills/<name>/ folder with a SKILL.md is one agent skill.
 package toolbox
 
 import (
@@ -14,12 +15,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nxnom/maggot/internal/agentskill"
 	"github.com/nxnom/maggot/internal/manifest"
 )
 
 const (
-	FileName = "maggot.json"
-	ToolsDir = "tools"
+	FileName  = "maggot.json"
+	ToolsDir  = "tools"
+	SkillsDir = "skills"
 )
 
 // Meta is the content of maggot.json.
@@ -45,6 +48,15 @@ type Tool struct {
 
 // Ref is the fully qualified reference "<toolbox>/<id>".
 func (t *Tool) Ref() string { return t.Toolbox.Handle + "/" + t.Manifest.ID }
+
+// Skill is an agent skill in a toolbox.
+type Skill struct {
+	*agentskill.Skill
+	Toolbox *Toolbox
+}
+
+// Ref is the fully qualified reference "<toolbox>/<name>".
+func (s *Skill) Ref() string { return s.Toolbox.Handle + "/" + s.Meta.Name }
 
 // Problem is a tool folder that could not be loaded.
 type Problem struct {
@@ -125,6 +137,39 @@ func FindUp(start string) (string, bool) {
 // ToolsPath is the folder that holds the tools.
 func (tb *Toolbox) ToolsPath() string { return filepath.Join(tb.Path, ToolsDir) }
 
+// SkillsPath is the folder that holds the skills.
+func (tb *Toolbox) SkillsPath() string { return filepath.Join(tb.Path, SkillsDir) }
+
+// Skills loads every skill. Broken skills are returned as problems.
+func (tb *Toolbox) Skills() ([]*Skill, []Problem) {
+	entries, err := os.ReadDir(tb.SkillsPath())
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, []Problem{{Toolbox: tb.Handle, Path: tb.SkillsPath(), Error: err.Error()}}
+	}
+	var skills []*Skill
+	var problems []Problem
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		dir := filepath.Join(tb.SkillsPath(), e.Name())
+		if !agentskill.Exists(dir) {
+			continue
+		}
+		sk, err := agentskill.LoadNamed(dir)
+		if err != nil {
+			problems = append(problems, Problem{Toolbox: tb.Handle, Path: dir, Error: err.Error()})
+			continue
+		}
+		skills = append(skills, &Skill{Skill: sk, Toolbox: tb})
+	}
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Meta.Name < skills[j].Meta.Name })
+	return skills, problems
+}
+
 // Tools loads every tool. Broken tools are returned as problems so one bad
 // folder does not hide the rest.
 func (tb *Toolbox) Tools() ([]*Tool, []Problem) {
@@ -163,10 +208,12 @@ func (tb *Toolbox) Tools() ([]*Tool, []Problem) {
 
 // Set is the group of toolboxes maggot works with in one command.
 type Set struct {
-	Toolboxes []*Toolbox
-	tools     []*Tool
-	problems  []Problem
-	loaded    bool
+	Toolboxes     []*Toolbox
+	tools         []*Tool
+	problems      []Problem
+	skills        []*Skill
+	skillProblems []Problem
+	loaded        bool
 }
 
 func (s *Set) load() {
@@ -178,6 +225,57 @@ func (s *Set) load() {
 		tools, problems := tb.Tools()
 		s.tools = append(s.tools, tools...)
 		s.problems = append(s.problems, problems...)
+		skills, problems := tb.Skills()
+		s.skills = append(s.skills, skills...)
+		s.skillProblems = append(s.skillProblems, problems...)
+	}
+}
+
+// Skills returns skills from all toolboxes, in toolbox order.
+func (s *Set) Skills() ([]*Skill, []Problem) {
+	s.load()
+	return s.skills, s.skillProblems
+}
+
+// ResolveSkill finds a skill by "name" or "toolbox/name".
+func (s *Set) ResolveSkill(ref string) (*Skill, error) {
+	s.load()
+	handle, name, qualified := strings.Cut(ref, "/")
+	if !qualified {
+		name, handle = handle, ""
+	}
+	var matches []*Skill
+	for _, sk := range s.skills {
+		if sk.Meta.Name == name && (handle == "" || sk.Toolbox.Handle == handle) {
+			matches = append(matches, sk)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		for _, p := range s.skillProblems {
+			if filepath.Base(p.Path) == name {
+				return nil, fmt.Errorf("skill %q is broken: %s", ref, p.Error)
+			}
+		}
+		var similar []string
+		for _, sk := range s.skills {
+			if strings.Contains(sk.Meta.Name, name) || strings.Contains(name, sk.Meta.Name) {
+				similar = append(similar, sk.Ref())
+			}
+		}
+		msg := fmt.Sprintf("no skill %q", ref)
+		if len(similar) > 0 {
+			msg += "; did you mean: " + strings.Join(similar, ", ")
+		}
+		return nil, errors.New(msg + " (see `maggot skill list`)")
+	default:
+		refs := make([]string, len(matches))
+		for i, m := range matches {
+			refs[i] = m.Ref()
+		}
+		return nil, fmt.Errorf("skill %q is in more than one toolbox; use one of: %s", ref, strings.Join(refs, ", "))
 	}
 }
 

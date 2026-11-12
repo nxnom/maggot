@@ -256,3 +256,76 @@ func TestIgnored(t *testing.T) {
 		}
 	}
 }
+
+func writeSkill(t *testing.T, dir, name, version string) {
+	t.Helper()
+	files := map[string]string{
+		"SKILL.md":          fmt.Sprintf("---\nname: %s\ndescription: Do it.\nmetadata:\n  version: %q\n---\nsteps\n", name, version),
+		"scripts/run.sh":    "#!/bin/sh\necho hi\n",
+		"assets/ref.txt":    "ref",
+		".git/HEAD":         "ref",
+		"__pycache__/x.pyc": "junk",
+	}
+	for name, body := range files {
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestSkillPackAndImport(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "demo")
+	writeSkill(t, src, "demo", "1.0.0")
+	if KindOf(src) != KindSkill {
+		t.Fatal("kind")
+	}
+	out := filepath.Join(t.TempDir(), "demo.maggot")
+	sk, err := PackSkill(src, out)
+	if err != nil || SkillFileName(sk) != "demo-1.0.0.maggot" {
+		t.Fatalf("pack: %v", err)
+	}
+	zr, _ := zip.OpenReader(out)
+	var names []string
+	for _, f := range zr.File {
+		names = append(names, f.Name)
+	}
+	zr.Close()
+	if strings.Join(names, ",") != "SKILL.md,assets/ref.txt,scripts/run.sh" {
+		t.Fatalf("files: %v", names)
+	}
+
+	box := t.TempDir()
+	tools := filepath.Join(box, "tools")
+	s, err := Stage(out, tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Kind != KindSkill || s.ID != "demo" || s.Version != "1.0.0" || s.Action != "install" || s.Target != filepath.Join(box, "skills", "demo") {
+		t.Fatalf("preview: %+v", s.Preview)
+	}
+	if err := s.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(box, "skills", "demo", "scripts", "run.sh")); err != nil {
+		t.Fatal(err)
+	}
+	// The same version again needs force; a folder source works too.
+	s, _ = Stage(src, tools)
+	if s.Action != "reinstall" || !s.NeedsForce() {
+		t.Fatalf("again: %+v", s.Preview)
+	}
+	s.Discard()
+	if entries, _ := os.ReadDir(tools); len(entries) != 0 {
+		t.Fatalf("temp folders left: %v", entries)
+	}
+}
+
+func TestStageNeitherToolNorSkill(t *testing.T) {
+	src := t.TempDir()
+	os.WriteFile(filepath.Join(src, "README.md"), []byte("x"), 0o644)
+	if _, err := Stage(src, filepath.Join(t.TempDir(), "tools")); err == nil || !strings.Contains(err.Error(), "SKILL.md") {
+		t.Fatalf("got %v", err)
+	}
+}

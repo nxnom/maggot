@@ -102,6 +102,16 @@ func DraftsDir() (string, error) {
 	return filepath.Join(d, "drafts"), nil
 }
 
+// SkillDraftsDir is where skill drafts live: a "skills" folder inside the
+// drafts folder, so a tool and a skill with the same name do not clash.
+func SkillDraftsDir() (string, error) {
+	d, err := DraftsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "skills"), nil
+}
+
 // Load reads the config file. A missing file gives an empty config.
 func Load() (*Config, error) {
 	dir, err := Dir()

@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/nxnom/maggot/internal/agentskill"
 	"github.com/nxnom/maggot/internal/manifest"
 	"github.com/nxnom/maggot/internal/toolbox"
 )
@@ -100,5 +101,22 @@ func TestClosest(t *testing.T) {
 	}
 	if got := Closest(all, "voise clonning", 3); len(got) == 0 || got[0].Manifest.ID != "voxcpm-tts" {
 		t.Errorf("typos should still find the TTS tool: %v", got)
+	}
+}
+
+func TestRankSkills(t *testing.T) {
+	sk := func(name, desc string) *toolbox.Skill {
+		return &toolbox.Skill{Toolbox: &toolbox.Toolbox{Handle: "p"}, Skill: &agentskill.Skill{Meta: agentskill.Meta{Name: name, Description: desc}}}
+	}
+	skills := []*toolbox.Skill{
+		sk("video-short", "Make a 60 second horror short from stills with cloned voices."),
+		sk("release-notes", "Write release notes from git history."),
+	}
+	hits := RankSkills(skills, "make a horror video")
+	if len(hits) != 1 || hits[0].Skill.Meta.Name != "video-short" || len(hits[0].Matched) != 3 {
+		t.Fatalf("got %+v", hits)
+	}
+	if hits := RankSkills(skills, "spreadsheet"); len(hits) != 0 {
+		t.Fatalf("got %+v", hits)
 	}
 }
