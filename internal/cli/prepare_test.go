@@ -37,16 +37,21 @@ func TestPrepare(t *testing.T) {
 		t.Fatalf("invalid: %d %+v", code, r)
 	}
 
-	// No output folder chosen → a warning to decide one, but still ready.
-	_, stdout, _ = run(t, "prepare", "maker", "--json", "--", "logo")
+	// No output folder chosen → not ready: a decision, and the next command
+	// has a placeholder so it cannot be run as is.
+	code, stdout, _ = run(t, "prepare", "maker", "--json", "--", "logo")
 	r = decode(stdout)
-	if !r.Ready || len(r.Warnings) != 1 || !strings.Contains(r.Warnings[0], "no output folder chosen") ||
-		!strings.HasSuffix(r.Next, "-- logo") {
-		t.Fatalf("raw: %+v", r)
+	if code != 1 || r.Ready || len(r.Decisions) != 1 || r.Decisions[0].Kind != "output_folder" ||
+		!strings.HasSuffix(r.Next, "-- --out '<choose a folder>' logo") {
+		t.Fatalf("raw: %d %+v", code, r)
 	}
-	// Raw args with the tool's own output flag: no warning.
+	_, stdout, _ = run(t, "prepare", "maker", "--json", "--inputs", `{"name":"x"}`)
+	if r = decode(stdout); r.Ready || !strings.HasSuffix(r.Next, "--out '<choose a folder>'") {
+		t.Fatalf("inputs without out: %+v", r)
+	}
+	// Raw args with the tool's own output flag: decided, ready.
 	_, stdout, _ = run(t, "prepare", "maker", "--json", "--", "--out", out, "logo")
-	if r = decode(stdout); len(r.Warnings) != 0 || r.Output["dir"] != out {
+	if r = decode(stdout); !r.Ready || len(r.Decisions) != 0 || r.Output["dir"] != out {
 		t.Fatalf("raw with out: %+v", r)
 	}
 

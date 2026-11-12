@@ -35,9 +35,13 @@ folder is (`maggot toolbox add <path>`) or create one (`maggot toolbox init <pat
 2. **Prepare:** `maggot prepare <tool> --inputs '{"name": value}' --out <folder> --json`
    (or `-- <raw args>`). It checks the inputs and requirements, resolves
    defaults, says where output goes, and returns the exact `next` command.
-   If `ready` is false, follow each problem's `fix`. Ask the user before
-   installing software (`maggot doctor <tool> --install --yes`) or setting a
-   secret. If the tool's last test failed, run `maggot test <tool>` first.
+   `ready` is true only when nothing must be fixed or decided:
+   - `problems`: follow each `fix`. Ask the user before installing software
+     (`maggot doctor <tool> --install --yes`) or setting a secret.
+   - `decisions` (e.g. `output_folder`): decide from the task, or ask the
+     user (see "Where results go"), then prepare again. Never run a `next`
+     command that still contains `<choose a folder>`.
+   If the tool's last test failed, run `maggot test <tool>` first.
 3. **Run:** run the `next` command it printed:
    `maggot run <tool> --json --inputs '...' --out <folder>`. The tool's own
    output streams to stderr; stdout is one JSON result with `ok`,

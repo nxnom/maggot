@@ -24,11 +24,22 @@ type Problem struct {
 	Fix     string `json:"fix,omitempty"`
 }
 
+// Decision is a choice that must be made before running (ask the user when
+// it is not clear), such as where the files should go.
+type Decision struct {
+	Kind    string   `json:"kind"` // output_folder
+	Message string   `json:"message"`
+	Options []string `json:"options,omitempty"`
+}
+
 type prepareResult struct {
-	Ref      string         `json:"ref"`
-	Ready    bool           `json:"ready"`
-	Problems []Problem      `json:"problems"`
-	Warnings []string       `json:"warnings"`
+	Ref string `json:"ref"`
+	// Ready is true only when nothing must be fixed (problems) and nothing
+	// must be decided (decisions).
+	Ready     bool       `json:"ready"`
+	Problems  []Problem  `json:"problems"`
+	Decisions []Decision `json:"decisions"`
+	Warnings  []string   `json:"warnings"`
 	Inputs   map[string]any `json:"inputs,omitempty"` // values after defaults
 	Argv     []string       `json:"argv,omitempty"`
 	Command  string         `json:"command,omitempty"`
@@ -100,7 +111,7 @@ goes, whether the tool is warm, the exact command it will run, and the
 func (a *app) prepare(ctx context.Context, t *toolbox.Tool, values map[string]any, useInputs bool, raw []string, outDir string, review bool) prepareResult {
 	m := t.Manifest
 	cwd, _ := os.Getwd()
-	res := prepareResult{Ref: t.Ref(), Problems: []Problem{}, Warnings: []string{}, Cwd: cwd, Output: map[string]any{}}
+	res := prepareResult{Ref: t.Ref(), Problems: []Problem{}, Decisions: []Decision{}, Warnings: []string{}, Cwd: cwd, Output: map[string]any{}}
 	dirFlag := ""
 	kind := ""
 	if m.Outputs != nil {
@@ -128,9 +139,13 @@ func (a *app) prepare(ctx context.Context, t *toolbox.Tool, values map[string]an
 	case dirFlag != "" && !useInputs && hasFlagValue(raw, dirFlag) != "":
 		res.Output["dir"] = hasFlagValue(raw, dirFlag)
 		res.outDir, _ = filepath.Abs(hasFlagValue(raw, dirFlag))
-	case kind == manifest.OutputFiles || (kind == "" && dirFlag != ""):
-		res.Output["dir"] = cwd + " (no folder chosen, so the tool's default; usually the current folder)"
-		res.Warnings = append(res.Warnings, fmt.Sprintf("no output folder chosen; decide where the files belong (or ask the user) and pass --out, or %s in the tool args", dirFlag))
+	case dirFlag != "":
+		res.Output["dir"] = "not chosen"
+		res.Decisions = append(res.Decisions, Decision{Kind: "output_folder",
+			Message: "choose where the files go; if it is not clear from the task, ask the user",
+			Options: []string{"--out <folder> (with --inputs)", dirFlag + " <folder> (in the tool args)", "--review (the user checks them first)"}})
+	case kind == manifest.OutputFiles:
+		res.Warnings = append(res.Warnings, "this tool has no output folder flag; it writes where its own args say, usually the current folder")
 	}
 
 	// Arguments.
@@ -199,8 +214,12 @@ func (a *app) prepare(ctx context.Context, t *toolbox.Tool, values map[string]an
 		}
 	}
 
-	res.Ready = len(res.Problems) == 0
-	if res.Ready {
+	res.Ready = len(res.Problems) == 0 && len(res.Decisions) == 0
+	if len(res.Problems) == 0 {
+		// With an open output decision, the command carries a placeholder
+		// so it cannot be run as is.
+		const choose = "<choose a folder>"
+		pending := len(res.Decisions) > 0
 		next := []string{"maggot", "run", t.Ref(), "--json"}
 		if review {
 			next = append(next, "--review")
@@ -208,11 +227,19 @@ func (a *app) prepare(ctx context.Context, t *toolbox.Tool, values map[string]an
 		if useInputs {
 			b, _ := json.Marshal(values)
 			next = append(next, "--inputs", string(b))
-			if outDir != "" && !review {
+			switch {
+			case outDir != "" && !review:
 				next = append(next, "--out", outDir)
+			case pending:
+				next = append(next, "--out", choose)
 			}
-		} else if len(args) > 0 {
-			next = append(next, "--")
+		} else {
+			if pending || len(args) > 0 {
+				next = append(next, "--")
+			}
+			if pending {
+				next = append(next, dirFlag, choose)
+			}
 			next = append(next, args...)
 		}
 		res.Next = strings.Join(quoteAll(next), " ")
@@ -259,6 +286,12 @@ func (a *app) printPrepare(r prepareResult) {
 			fmt.Fprintf(w, "\n      fix: %s", p.Fix)
 		}
 		fmt.Fprintln(w)
+	}
+	for _, d := range r.Decisions {
+		fmt.Fprintf(w, "  ? %s\n", d.Message)
+		for _, o := range d.Options {
+			fmt.Fprintf(w, "      - %s\n", o)
+		}
 	}
 	for _, warning := range r.Warnings {
 		fmt.Fprintf(w, "  ! %s\n", warning)
