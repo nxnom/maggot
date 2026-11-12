@@ -597,9 +597,20 @@ body { font-family: var(--sans); font-size: 14px; color: var(--ink); }
 .input, .select, .textarea { border-radius: 3px; border: 2px solid var(--line); background: var(--input); padding: 6px 8px; }
 .input:hover, .textarea:hover { background: var(--sunk); }
 .input:focus, .select:focus, .textarea:focus { outline: none; border-color: var(--focus); background: var(--panel); }
-.segmented { border-radius: 3px; border: 0; gap: 2px; background: none; }
-.segmented span { border: 0; border-radius: 3px; background: color-mix(in srgb, var(--ink) 6%, transparent); padding: 6px 10px; font-weight: 500; }
-.segmented input:checked + span { background: var(--green); color: var(--on-green); }
+/* "Pick one" fields are radio choices, not buttons: a ring + label, the ring fills when picked. */
+.segmented { border: 0; border-radius: 0; overflow: visible; gap: 6px 22px; padding: 4px 0; }
+.segmented span {
+  display: inline-flex; align-items: center; gap: 8px; padding: 2px 0; border: 0; background: none;
+  font-weight: 400; color: var(--ink);
+}
+.segmented span::before {
+  content: ""; flex: none; width: 16px; height: 16px; border-radius: 50%; box-sizing: border-box;
+  border: 2px solid var(--ink-2); background: var(--panel);
+}
+.segmented label:hover span::before { border-color: var(--ink); }
+.segmented input:checked + span { background: none; color: var(--ink); font-weight: 500; }
+.segmented input:checked + span::before { border: 5px solid var(--green); background: #fff; }
+.segmented input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 3px; }
 .check input { accent-color: var(--green); }
 .drop { border-radius: 3px; border: 2px dashed var(--line); background: var(--sunk); }
 .tp-dock { background: var(--sunk); border-top-color: var(--line); }
