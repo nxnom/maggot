@@ -640,3 +640,26 @@ dialog { border-radius: 3px; border: 0; box-shadow: 0 8px 12px rgba(9,30,66,.15)
 .out-item.out-audio { box-shadow: none; border: 1px solid var(--line); background: var(--panel); }
 .log-box { border-top-color: var(--line); }
 
+/* ---------- syntax highlighting (Atlassian code block colors) ---------- */
+pre.code { color: var(--ink); }
+.tok-com { color: #6B778C; font-style: italic; }
+.tok-str { color: #216E4E; }
+.tok-key { color: #0055CC; }
+.tok-kw { color: #AE2E24; font-weight: 600; }
+.tok-lit, .tok-num { color: #5E4DB2; }
+.tok-fn { color: #A54800; }
+.tok-var { color: #0055CC; }
+.tok-type { color: #206A83; }
+.tok-meta { color: #6B778C; font-weight: 600; }
+@media (prefers-color-scheme: dark) {
+  .tok-com { color: #8C9BAB; }
+  .tok-str { color: #7EE2B8; }
+  .tok-key { color: #85B8FF; }
+  .tok-kw { color: #FD9891; }
+  .tok-lit, .tok-num { color: #B8ACF6; }
+  .tok-fn { color: #FEC195; }
+  .tok-var { color: #85B8FF; }
+  .tok-type { color: #9DD9EE; }
+  .tok-meta { color: #8C9BAB; }
+}
+

@@ -4,6 +4,7 @@ import { pick } from "./picker.js";
 import { buildForm } from "./form.js";
 import { RunView } from "./run.js";
 import { renderMarkdown } from "./md.js";
+import { language, highlightLines } from "./hl.js";
 
 
 const side = document.getElementById("side");
@@ -548,7 +549,7 @@ async function toolPage(spec) {
       b.tabIndex = on ? 0 : -1;
       panelEls[tid].hidden = !on;
     }
-    if (id === "code" && !loaded.code) { loaded.code = true; loadFiles(tool, files); }
+    if (id === "code" && !loaded.code) { loaded.code = true; loadFiles(tool, files, params.get("file")); }
     if (id === "settings" && !loaded.settings) { loaded.settings = true; renderSecrets(tool, secrets); }
     setURL(id === "history" && historyActive ? { run: historyActive } : null);
   }
@@ -618,8 +619,10 @@ async function openTool(tool) {
   try { await post("/api/tool/open", { ref: tool.ref }); } catch (e) { toast(e.message, true); }
 }
 
+const LANG_NAMES = { json: "JSON", python: "Python", shell: "Shell", js: "JavaScript", go: "Go", yaml: "YAML", toml: "TOML", markdown: "Markdown" };
+
 // loadFiles shows the tool's files (read-only) with a code view.
-async function loadFiles(tool, el) {
+async function loadFiles(tool, el, startPath) {
   let res;
   try { res = await get(`/api/tool/files?ref=${q(tool.ref)}`); } catch (e) { return toast(e.message, true); }
   const view = h("div", { class: "code-view" });
@@ -633,11 +636,14 @@ async function loadFiles(tool, el) {
     let file;
     try { file = await get(`/api/tool/file?ref=${q(tool.ref)}&path=${q(f.path)}`); } catch (e) { return clear(view, h("p", { class: "notice" }, e.message)); }
     if (file.binary) return clear(view, h("div", { class: "code-head" }, h("code", null, f.path), h("span", { class: "muted" }, bytes(file.size))), h("p", { class: "muted", style: "padding:12px" }, "Binary file, not shown."));
-    const lines = file.text.replace(/\n$/, "").split("\n");
+    const text = file.text.replace(/\n$/, "");
+    const lang = language(f.path, text);
+    const lines = highlightLines(text, lang);
     clear(view,
-      h("div", { class: "code-head" }, h("code", null, f.path), h("span", { class: "muted" }, `${lines.length} lines, ${bytes(file.size)}`)),
+      h("div", { class: "code-head" }, h("code", null, f.path),
+        h("span", { class: "muted" }, [lang ? LANG_NAMES[lang] : null, `${lines.length} lines`, bytes(file.size)].filter(Boolean).join(" · "))),
       file.truncated ? h("p", { class: "notice", style: "margin:8px" }, "Only the first 512 KB is shown.") : null,
-      h("pre", { class: "code", tabindex: "0" }, lines.map((l) => h("span", { class: "ln" }, l + "\n"))));
+      h("pre", { class: "code", tabindex: "0" }, lines.map((l) => h("span", { class: "ln" }, l, "\n"))));
   }
   const items = res.files.map((f) => {
     if (f.skipped) return h("li", null, h("span", { class: "skipped", title: "Not listed" }, f.path));
@@ -647,7 +653,8 @@ async function loadFiles(tool, el) {
   });
   clear(list, items);
   clear(el, list, view);
-  const first = list.querySelector("button");
+  const wanted = startPath && [...list.querySelectorAll("button")].find((b) => b.firstChild.textContent === startPath);
+  const first = wanted || list.querySelector("button");
   if (first) first.click();
 }
 
