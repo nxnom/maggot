@@ -5,6 +5,7 @@ import { buildForm } from "./form.js";
 import { RunView } from "./run.js";
 import { renderMarkdown } from "./md.js";
 import { language, highlightLines } from "./hl.js";
+import { fileIcon, folderIcon } from "./icons.js";
 
 
 const side = document.getElementById("side");
@@ -886,20 +887,21 @@ async function loadFiles(tool, el, startPath) {
       const pad = { style: `padding-left:${10 + depth * 14}px` };
       if (dir.skipped) {
         items.push(h("li", null, h("span", { class: "skipped", ...pad, title: "maggot does not list this folder" },
-          h("span", { class: "chev", "aria-hidden": "true" }), h("span", { class: "dir-name" }, name), h("span", { class: "size" }, "not listed"))));
+          h("span", { class: "chev", "aria-hidden": "true" }), folderIcon(), h("span", { class: "dir-name" }, name), h("span", { class: "size" }, "not listed"))));
         continue;
       }
       const children = h("ul", { class: "tree", hidden: true }, renderNode(dir, depth + 1));
+      const icon = h("span", { class: "tree-icon" }, folderIcon());
       const toggle = h("button", { type: "button", class: "dir", "aria-expanded": "false", ...pad },
-        h("span", { class: "chev", "aria-hidden": "true" }), h("span", { class: "dir-name" }, name));
-      const setOpen = (open) => { toggle.setAttribute("aria-expanded", String(open)); children.hidden = !open; };
+        h("span", { class: "chev", "aria-hidden": "true" }), icon, h("span", { class: "dir-name" }, name));
+      const setOpen = (open) => { toggle.setAttribute("aria-expanded", String(open)); children.hidden = !open; clear(icon, folderIcon({ open })); };
       toggle.addEventListener("click", () => setOpen(children.hidden));
       dirToggles.set(dir.path, setOpen);
       items.push(h("li", null, toggle, children));
     }
     for (const { name, file } of node.files.sort((a, b) => byName(a.name, b.name))) {
-      const btn = h("button", { type: "button", style: `padding-left:${24 + depth * 14}px`, title: file.path },
-        h("span", { class: "file-name" }, name), h("span", { class: "size" }, bytes(file.size)));
+      const btn = h("button", { type: "button", style: `padding-left:${28 + depth * 14}px`, title: file.path },
+        fileIcon(name), h("span", { class: "file-name" }, name), h("span", { class: "size" }, bytes(file.size)));
       btn.addEventListener("click", () => show(file, btn));
       fileButtons.set(file.path, btn);
       items.push(h("li", null, btn));

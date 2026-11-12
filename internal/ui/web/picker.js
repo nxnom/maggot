@@ -2,6 +2,7 @@
 // so the tool gets real paths (no copying of large files).
 import { h, clear, openDialog, bytes, store, toast, debounce } from "./dom.js";
 import { get, q } from "./api.js";
+import { fileIcon, folderIcon } from "./icons.js";
 
 // mode: "dir" (choose a folder), "file" (one file), "files" (several files).
 // accept: the input's file types (".json", "audio/*"); other files are hidden
@@ -106,7 +107,7 @@ export function pick({ mode = "dir", title, start, accept }) {
       const rows = res.entries.map((e) => {
         const isSel = selected.has(e.path);
         const btn = h("button", { type: "button", "aria-pressed": e.dir ? null : String(isSel), title: e.path },
-          h("span", { class: "icon", "aria-hidden": "true" }, e.dir ? "▸" : "·"),
+          h("span", { class: "icon" }, e.dir ? folderIcon({ toolbox: e.toolbox }) : fileIcon(e.name)),
           res.search ? h("span", { class: "picker-rel" }, h("span", null, e.name), e.rel !== e.name ? h("span", { class: "muted" }, e.rel.slice(0, -e.name.length - 1)) : null)
             : h("span", null, e.name),
           e.toolbox ? h("span", { class: "tag" }, "toolbox") : null,

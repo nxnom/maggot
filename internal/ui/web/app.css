@@ -856,3 +856,33 @@ a.home-run:hover .home-run-name { text-decoration: underline; }
 .picker-opts { gap: 18px; margin-top: 8px; flex-wrap: wrap; }
 .picker-rel { display: flex; flex-direction: column; min-width: 0; text-align: left; }
 .picker-rel .muted { font-size: 12px; overflow-wrap: anywhere; }
+
+/* ---------- file and folder icons ---------- */
+.ic { flex: none; display: block; }
+.ic .ic-fill { fill: currentColor; fill-opacity: .18; }
+.ic-folder { color: #4C8BF5; }
+.ic-toolbox { color: #22A06B; }
+.ic-toolbox .ic-mark { stroke-width: 1.4; }
+.ic-image { color: #1F9D74; }
+.ic-video { color: #8270DB; }
+.ic-audio { color: #D97008; }
+.ic-pdf { color: #C9372C; }
+.ic-archive { color: #946F00; }
+.ic-code { color: #1D7AFC; }
+.ic-data { color: #B38600; }
+.ic-text, .ic-file { color: var(--ink-2); }
+.picker-list .icon { width: 18px; display: flex; justify-content: center; }
+.tree-icon { display: flex; flex: none; }
+.file-list button { align-items: center; }
+.file-list button[aria-current="true"] .ic { color: inherit; }
+@media (prefers-color-scheme: dark) {
+  .ic-folder { color: #6CA0F8; }
+  .ic-toolbox { color: #4BCE97; }
+  .ic-image { color: #4BCE97; }
+  .ic-video { color: #9F8FEF; }
+  .ic-audio { color: #FEA362; }
+  .ic-pdf { color: #F87168; }
+  .ic-archive { color: #E2B203; }
+  .ic-code { color: #579DFF; }
+  .ic-data { color: #F5CD47; }
+}
