@@ -128,24 +128,112 @@ function tryDialog() {
 
 async function homePage() {
   if (!state.toolboxes.length) return emptyPage();
-  const toolsCount = state.tools.length;
-  const recent = h("div");
-  clear(main,
-    h("h1", { class: "page-title" }, toolsCount ? "Pick a tool" : "This toolbox is empty"),
-    toolsCount
-      ? h("p", { class: "muted", style: "margin:0 0 24px" }, `${toolsCount} tool${toolsCount === 1 ? "" : "s"} in ${state.toolboxes.length} toolbox${state.toolboxes.length === 1 ? "" : "es"}. Choose one on the left, or search by what you want to do.`)
-      : h("div", { style: "max-width:62ch" },
-          h("p", null, "Ask your coding agent to build a tool. With the maggot skill it creates one with ", h("code", null, "maggot new"), ", tests it, and adds it here. You can also import a .maggot file."),
-          h("button", { class: "btn green", type: "button", onclick: importDialog }, "Import tool")),
-    problemsNotice(),
-    recent);
-  const { runs } = await get("/api/runs?limit=8");
-  if (!runs.length) return;
-  clear(recent,
-    h("h2", { style: "font-size:16px;margin:28px 0 8px" }, "Recent runs"),
-    h("div", { class: "panel" }, h("ul", { class: "history" }, runs.map((r) => h("li", null,
-      h("a", { href: `#/tool/${encodeURIComponent(r.ref)}?run=${r.id}`, style: "display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:9px 16px;text-decoration:none;color:inherit" },
-        h("span", { class: "status " + r.status }), h("span", null, r.tool_name), h("span", { class: "muted" }, ago(r.started))))))));
+  const known = new Set([...state.tools.map((t) => t.ref), ...state.drafts.map((d) => d.ref)]);
+  const byRef = new Map(state.tools.map((t) => [t.ref, t]));
+
+  // ---------- main column: search + tool cards ----------
+  const results = h("div", { class: "home-results" });
+  const search = h("input", {
+    class: "home-search", type: "search", "aria-label": "Search tools",
+    placeholder: "What do you want to do? For example: convert a video to MP3",
+  });
+  const card = (t) => h("a", { class: "tool-card", href: "#/tool/" + encodeURIComponent(t.ref) },
+    h("span", { class: "tool-card-head" }, h("span", { class: "tool-card-name" }, t.name), h("span", { class: "tp-version" }, "v" + t.version)),
+    h("span", { class: "tool-card-desc" }, t.description),
+    h("span", { class: "tool-card-chips" },
+      { passed: h("span", { class: "req" }, "Tests passed"), failed: h("span", { class: "req bad" }, "Tests failed"),
+        old: h("span", { class: "req wait" }, "Older version tested"), never: h("span", { class: "req wait" }, "Not tested") }[t.tested],
+      (t.missing || []).length ? h("span", { class: "req bad" }, "Needs " + t.missing.map((x) => x.replace(/^(binary|env) /, "")).join(", ")) : null,
+      state.warm.some((w) => w.ref === t.ref && w.running) ? h("span", { class: "req warm-on" }, "In memory") : null,
+      state.toolboxes.length > 1 ? h("span", { class: "muted" }, t.toolbox) : null));
+  function showAll() {
+    if (!state.tools.length) {
+      return clear(results, h("div", { class: "home-empty" },
+        h("h2", null, "No tools yet"),
+        h("p", null, "Ask your coding agent to build one: with the maggot skill it creates a draft, tests it and gives it to you to try. Or import a .maggot file."),
+        h("button", { class: "btn green", type: "button", onclick: importDialog }, "Import tool")));
+    }
+    const groups = new Map();
+    for (const t of state.tools) {
+      const g = t.categories[0] || "Other";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(t);
+    }
+    const names = [...groups.keys()].sort((a, b) => (a === "Other") - (b === "Other") || a.localeCompare(b));
+    clear(results, names.map((g) => h("section", { class: "tool-group-block" },
+      h("h2", null, g, h("span", { class: "muted" }, String(groups.get(g).length))),
+      h("div", { class: "tool-cards" }, groups.get(g).sort((a, b) => a.name.localeCompare(b.name)).map(card)))));
+  }
+  const runSearch = debounce(async () => {
+    const term = search.value.trim();
+    if (!term) return showAll();
+    let res;
+    try { res = await get(`/api/search?q=${q(term)}`); } catch { return; }
+    if (search.value.trim() !== term) return;
+    const found = res.refs.map((r) => byRef.get(r)).filter(Boolean);
+    if (found.length) {
+      return clear(results, h("p", { class: "muted home-count" }, `${found.length} matching tool${found.length === 1 ? "" : "s"}`),
+        h("div", { class: "tool-cards" }, found.map(card)));
+    }
+    const close = res.closest.map((r) => byRef.get(r)).filter(Boolean);
+    clear(results, h("div", { class: "home-empty" },
+      h("h2", null, "No tool does that yet"),
+      h("p", null, close.length ? "These are the closest, but not a direct match:" : "Try other words, like what goes in and what comes out. Or ask your coding agent to build the tool."),
+      close.length ? h("div", { class: "tool-cards" }, close.map(card)) : null));
+  }, 150);
+  search.addEventListener("input", runSearch);
+  showAll();
+
+  // ---------- side column: in memory, drafts, recent runs ----------
+  const side = h("aside", { class: "home-side" });
+  const sections = [];
+  const warmNow = state.warm.filter((w) => known.has(w.ref));
+  if (warmNow.length) {
+    sections.push(h("section", { class: "home-panel" }, h("h2", null, "In memory"),
+      h("ul", { class: "home-list" }, warmNow.map((w) => {
+        const stop = h("button", { class: "btn small", type: "button" }, "Stop");
+        stop.addEventListener("click", async () => {
+          stop.disabled = true;
+          try { await del(`/api/tool/warm?ref=${q(w.ref)}`); toast("Stopped. Memory is free again."); await loadState(); route(); } catch (e) { toast(e.message, true); stop.disabled = false; }
+        });
+        const name = (byRef.get(w.ref) || {}).name || w.id;
+        return h("li", null, h("a", { href: "#/tool/" + encodeURIComponent(w.ref) }, name),
+          h("span", { class: "muted" }, w.running ? `stops in ${Math.max(1, Math.round(w.idle_left / 60))} min · ${w.jobs} run${w.jobs === 1 ? "" : "s"}` : "loading…"), stop);
+      }))));
+  }
+  if (state.drafts.length) {
+    sections.push(h("section", { class: "home-panel" }, h("h2", null, "Drafts to try"),
+      h("ul", { class: "home-list" }, state.drafts.map((d) => h("li", null,
+        h("a", { href: "#/tool/" + encodeURIComponent(d.ref) }, d.name || d.id),
+        h("span", { class: d.error ? "muted bad-text" : "muted" }, d.error ? "invalid tool.json" : "v" + d.version),
+        d.error ? null : h("button", { class: "btn small", type: "button", onclick: () => stageImport(d.path, d) }, "Import…"))))));
+  }
+  const recent = h("ul", { class: "home-list" }, h("li", { class: "muted" }, "Loading…"));
+  sections.push(h("section", { class: "home-panel" }, h("h2", null, "Recent runs"), recent));
+  clear(side, sections);
+
+  clear(main, h("div", { class: "home" },
+    h("div", { class: "home-main" },
+      h("h1", { class: "page-title" }, "Tools"),
+      h("p", { class: "muted", style: "margin:0 0 14px" }, `${state.tools.length} tool${state.tools.length === 1 ? "" : "s"} in ${state.toolboxes.length} toolbox${state.toolboxes.length === 1 ? "" : "es"}`),
+      search, problemsNotice(), results),
+    side));
+  const onKey = (e) => { if (e.key === "/" && document.activeElement !== search && !e.target.closest("input, textarea, select")) { e.preventDefault(); search.focus(); } };
+  document.addEventListener("keydown", onKey);
+  page = { cleanup: () => document.removeEventListener("keydown", onKey) };
+
+  // Latest run per tool; runs of tools that no longer exist are shown as removed.
+  let runs = [];
+  try { runs = (await get("/api/runs?limit=60")).runs; } catch { /* ignore */ }
+  const seen = new Set();
+  const latest = runs.filter((r) => !seen.has(r.ref) && seen.add(r.ref)).slice(0, 8);
+  clear(recent, latest.length ? latest.map((r) => {
+    const label = [h("span", { class: "status " + r.status, "aria-label": r.status }), h("span", { class: "home-run-name" }, r.tool_name)];
+    const when = h("span", { class: "muted" }, ago(r.started));
+    return known.has(r.ref)
+      ? h("li", null, h("a", { class: "home-run", href: `#/tool/${encodeURIComponent(r.ref)}?tab=history&run=${r.id}` }, label), when)
+      : h("li", { class: "removed", title: "This tool is no longer in your toolboxes" }, h("span", { class: "home-run" }, label, h("span", { class: "muted" }, "removed")), when);
+  }) : h("li", { class: "muted" }, "No runs yet."));
 }
 
 function problemsNotice() {

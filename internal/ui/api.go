@@ -23,6 +23,7 @@ import (
 	"github.com/nxnom/maggot/internal/search"
 	"github.com/nxnom/maggot/internal/testlog"
 	"github.com/nxnom/maggot/internal/toolbox"
+	"github.com/nxnom/maggot/internal/warm"
 	"github.com/nxnom/maggot/internal/workspace"
 )
 
@@ -34,6 +35,10 @@ type toolSummary struct {
 	Description string   `json:"description"`
 	Categories  []string `json:"categories"`
 	Toolbox     string   `json:"toolbox"`
+	// For the home page cards.
+	Tested  string   `json:"tested"`            // passed, failed, old, never
+	Missing []string `json:"missing,omitempty"` // binaries/env needed before it can run
+	Warm    bool     `json:"warm,omitempty"`    // can stay in memory
 }
 
 func summary(t *toolbox.Tool) toolSummary {
@@ -41,7 +46,21 @@ func summary(t *toolbox.Tool) toolSummary {
 	if c == nil {
 		c = []string{}
 	}
-	return toolSummary{t.Ref(), t.Manifest.ID, t.Manifest.Version, t.Manifest.Name, t.Manifest.Description, c, t.Toolbox.Handle}
+	return toolSummary{Ref: t.Ref(), ID: t.Manifest.ID, Version: t.Manifest.Version, Name: t.Manifest.Name,
+		Description: t.Manifest.Description, Categories: c, Toolbox: t.Toolbox.Handle, Warm: t.Manifest.Warm != nil}
+}
+
+// testedLabel says how the last test went for this version of the tool.
+func testedLabel(rec *testlog.Record, version string) string {
+	switch {
+	case rec == nil:
+		return "never"
+	case rec.Version != version:
+		return "old"
+	case rec.OK:
+		return "passed"
+	}
+	return "failed"
 }
 
 func (s *Server) apiState(w http.ResponseWriter, r *http.Request) error {
@@ -60,9 +79,21 @@ func (s *Server) apiState(w http.ResponseWriter, r *http.Request) error {
 	tools, _ := ws.Set.Tools()
 	counts := map[string]int{}
 	rows := []toolSummary{}
+	tested, _ := testlog.Load()
 	for _, t := range tools {
 		counts[t.Toolbox.Handle]++
-		rows = append(rows, summary(t))
+		row := summary(t)
+		var rec *testlog.Record
+		if r, found := tested[t.Ref()]; found {
+			rec = &r
+		}
+		row.Tested = testedLabel(rec, t.Manifest.Version)
+		row.Missing = workspace.Missing(t, s.store, s.checker.LookPath)
+		rows = append(rows, row)
+	}
+	warmNow := warm.List()
+	if warmNow == nil {
+		warmNow = []warm.Status{}
 	}
 	boxes := []tbRow{}
 	for _, tb := range ws.Set.Toolboxes {
@@ -80,7 +111,7 @@ func (s *Server) apiState(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]any{
 		"version": s.Version, "config_path": ws.Config.Path(), "data_dir": s.data, "home": home,
 		"selected": s.Selector != "", "toolboxes": boxes, "tools": rows, "problems": ws.AllProblems(),
-		"drafts": drafts, "drafts_dir": draftsDir,
+		"drafts": drafts, "drafts_dir": draftsDir, "warm": warmNow,
 	})
 }
 
@@ -230,11 +261,19 @@ func (s *Server) apiSearch(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	tools, _ := ws.Set.Tools()
+	q := r.URL.Query().Get("q")
 	refs := []string{}
-	for _, h := range search.Rank(tools, r.URL.Query().Get("q")) {
+	for _, h := range search.Rank(tools, q) {
 		refs = append(refs, h.Tool.Ref())
 	}
-	return ok(w, map[string]any{"refs": refs})
+	// Nothing matched: the most similar tools, marked as not a direct match.
+	closest := []string{}
+	if len(refs) == 0 {
+		for _, t := range search.Closest(tools, q, 3) {
+			closest = append(closest, t.Ref())
+		}
+	}
+	return ok(w, map[string]any{"refs": refs, "closest": closest})
 }
 
 func (s *Server) resolve(r *http.Request, ref string) (*workspace.Workspace, *toolbox.Tool, error) {
