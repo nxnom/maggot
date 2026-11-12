@@ -6,7 +6,8 @@ import { pick } from "./picker.js";
 const MAX_LINES = 2000;
 
 export class RunView {
-  constructor({ onFinish, onReuse, onTaken }) {
+  constructor({ onFinish, onReuse, onTaken, emptyText }) {
+    this.emptyText = emptyText || "Fill in the form and press Run. Output and result files show up here.";
     this.onFinish = onFinish;
     this.onReuse = onReuse;
     this.onTaken = onTaken;
@@ -21,8 +22,7 @@ export class RunView {
     this.meta = null;
     clear(this.el,
       h("div", { class: "panel-head" }, h("h2", null, "Run")),
-      h("div", { class: "panel-body" }, h("p", { class: "muted", style: "margin:0" },
-        "Fill in the form and press Run. Output and result files show up here.")));
+      h("div", { class: "panel-body" }, h("p", { class: "muted", style: "margin:0" }, this.emptyText)));
   }
 
   stop() {
@@ -40,13 +40,15 @@ export class RunView {
     const reveal = h("button", { class: "btn small quiet", type: "button" }, "Show folder");
     const meter = h("div", { class: "meter indeterminate", role: "progressbar", "aria-label": "Progress" }, h("div"));
     const log = h("pre", { class: "log", tabindex: "0", "aria-label": "Output" });
-    const results = h("div");
-    this.parts = { status, time, cancel, meter, log, results };
+    const logCount = h("span", { class: "log-count" });
+    // Results first; the log is a section you open when you need it.
+    const logBox = h("details", { class: "log-box", open: true }, h("summary", null, "Log", logCount), log);
+    const results = h("div", { class: "results" });
+    this.parts = { status, time, cancel, meter, log, logBox, logCount, results };
     clear(this.el,
-      h("div", { class: "panel-head" }, h("h2", null, "Run"), status, time, cancel),
-      h("div", { class: "panel-body" }, meter, log,
-        h("div", { class: "row", style: "margin-top:10px;flex-wrap:wrap" }, reveal, reuse),
-        results));
+      h("div", { class: "panel-head" }, h("h2", null, "Run"), status, time, cancel,
+        h("span", { class: "run-actions" }, reveal, reuse)),
+      h("div", { class: "panel-body" }, meter, results, logBox));
 
     cancel.addEventListener("click", async () => {
       cancel.disabled = true;
@@ -78,6 +80,7 @@ export class RunView {
       const m = JSON.parse(e.data);
       if (m.type === "out" || m.type === "err") {
         this.lines++;
+        this.parts.logCount.textContent = `${this.lines} line${this.lines === 1 ? "" : "s"}`;
         log.append(m.type === "err" ? h("span", { class: "err" }, m.text + "\n") : m.text + "\n");
         while (log.childNodes.length > MAX_LINES) log.firstChild.remove();
         if (stick) log.scrollTop = log.scrollHeight;
@@ -120,6 +123,8 @@ export class RunView {
     if (meta.status !== "running") {
       if (meta.progress >= 0) this.setProgress(meta.status === "succeeded" ? 1 : meta.progress);
       else meter.classList.add("hidden");
+      // After success the log folds away; after a failure it stays open.
+      this.parts.logBox.open = meta.status !== "succeeded";
     } else if (meta.progress >= 0) {
       this.setProgress(meta.progress);
     }
@@ -156,6 +161,7 @@ export class RunView {
           ? [`${n} new file${n === 1 ? "" : "s"} in `, h("code", null, detail.run.out_dir)]
           : `${n} file${n === 1 ? "" : "s"}`), move),
         h("div", { class: "outputs" }, detail.outputs.slice(0, 60).map((f) => outputCard(id, f))));
+      if (this.parts.logBox && detail.run.status === "succeeded") this.parts.logBox.open = false;
     } else if (detail.run.status === "succeeded" && !items.length && this.lines === 0) {
       items.push(h("p", { class: "muted" }, "Finished with no output."));
     }
@@ -189,6 +195,16 @@ RunView.prototype.take = async function (id, n) {
 function outputCard(runId, f) {
   const url = fileURL(runId, f.path);
   const type = f.mime.split("/")[0];
+  const links = h("div", { class: "links" },
+    h("a", { class: "btn small", href: url, target: "_blank", rel: "noopener" }, "Open"),
+    h("a", { class: "btn small", href: fileURL(runId, f.path, true) }, "Download"),
+    h("button", { class: "btn small quiet", type: "button", onclick: () => post("/api/reveal", { run: runId, path: f.path }).catch((e) => toast(e.message, true)) }, "Show in folder"));
+  // Audio: a compact row with a full-width player instead of an empty card.
+  if (type === "audio") {
+    return h("div", { class: "out-item out-audio" },
+      h("div", { class: "meta" }, h("div", { class: "name" }, f.path), h("div", { class: "muted" }, bytes(f.size)), links),
+      h("audio", { src: url, controls: true, preload: "metadata" }));
+  }
   let media;
   if (type === "image" && f.mime !== "image/heic") media = h("img", { src: url, alt: f.path, loading: "lazy" });
   else if (type === "video") media = h("video", { src: url, controls: true, preload: "metadata" });

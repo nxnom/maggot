@@ -5,6 +5,7 @@ import { buildForm } from "./form.js";
 import { RunView } from "./run.js";
 import { renderMarkdown } from "./md.js";
 
+
 const side = document.getElementById("side");
 const main = document.getElementById("main");
 let state = null;
@@ -288,22 +289,42 @@ async function toolPage(spec) {
   const m = tool.manifest;
   const saved = store("values:" + tool.ref);
 
-  // nameplate
   const draft = tool.draft ? { ...tool.draft, ref: tool.ref } : null;
-  const plate = h("header", { class: "plate" + (draft ? " draft" : "") },
-    h("h1", null, m.name),
-    h("div", { class: "stamp" },
-      h("span", null, "v" + m.version),
-      h("span", null, draft ? "Draft" : tool.ref),
-      m.categories && m.categories.length ? h("span", null, m.categories.join(", ")) : null),
-    h("div", { class: "actions" },
-      h("a", { class: "btn small", href: `/api/export?ref=${q(tool.ref)}` }, "Export"),
-      draft ? null : h("button", { class: "btn small", type: "button", onclick: async () => {
-        if (!(await confirmDialog(`Delete ${m.name}?`, h("div", null, h("p", null, "This deletes the tool folder:"), h("p", null, h("code", null, tool.dir))), "Delete tool", true))) return;
-        try { await del(`/api/tool?ref=${q(tool.ref)}`); toast(`Deleted ${m.name}.`); await loadState(); location.hash = "#/"; } catch (e) { toast(e.message, true); }
-      } }, "Delete")));
+  const params = new URLSearchParams(query || "");
 
+  // ---------- header ----------
   const reqs = h("div", { class: "reqs", "aria-label": "Requirements" }, h("span", { class: "req wait" }, "Checking requirements…"));
+  const deleteTool = draft ? null : h("button", { class: "btn", type: "button", onclick: async () => {
+    if (!(await confirmDialog(`Delete ${m.name}?`, h("div", null, h("p", null, "This deletes the tool folder:"), h("p", null, h("code", null, tool.dir))), "Delete tool", true))) return;
+    try { await del(`/api/tool?ref=${q(tool.ref)}`); toast(`Deleted ${m.name}.`); await loadState(); location.hash = "#/"; } catch (e) { toast(e.message, true); }
+  } }, "Delete");
+  // One line: breadcrumb, name, version, chips | actions. The description
+  // is clamped to one line ("More" expands it); the Docs tab has it all.
+  const desc = h("p", { class: "tp-desc", title: m.description }, m.description);
+  const more = h("button", { class: "tp-more", type: "button", hidden: true }, "More");
+  more.addEventListener("click", () => {
+    const open = desc.classList.toggle("open");
+    more.textContent = open ? "Less" : "More";
+  });
+  const header = h("header", { class: "tp-head" + (draft ? " draft" : "") },
+    h("div", { class: "tp-titlebar" },
+      h("div", { class: "tp-title" },
+        h("nav", { class: "tp-crumbs", "aria-label": "Breadcrumb" },
+          h("a", { href: "#/" }, "Tools"), h("span", { "aria-hidden": "true" }, "/"), h("span", null, draft ? "Drafts" : tool.toolbox), h("span", { "aria-hidden": "true" }, "/")),
+        h("h1", null, m.name),
+        h("span", { class: "tp-version" }, "v" + m.version),
+        draft ? h("span", { class: "tp-draft-badge" }, "Draft") : null,
+        reqs),
+      h("div", { class: "tp-actions" },
+        h("button", { class: "btn", type: "button", onclick: () => openTool(tool) }, "Show folder"),
+        h("a", { class: "btn", href: `/api/export?ref=${q(tool.ref)}` }, "Export"),
+        deleteTool)),
+    h("div", { class: "tp-desc-row" }, desc, more),
+    draft ? draftNote(draft, m) : null);
+  // Show "More" only when the description does not fit on one line.
+  requestAnimationFrame(() => { more.hidden = desc.scrollWidth <= desc.clientWidth + 1; });
+
+  // ---------- run tab: form | result ----------
   const warmBox = m.warm ? h("div", { class: "warm-box" }) : null;
   let warmTimer = null;
   if (warmBox) {
@@ -313,12 +334,10 @@ async function toolPage(spec) {
       try { renderWarm(tool, warmBox, await get(`/api/tool/warm?ref=${q(tool.ref)}`)); } catch { /* page left */ }
     }, 4000);
   }
-  const secrets = h("div");
 
-  // form + command line
-  const cmd = h("pre", { class: "cmd", "aria-live": "polite" });
+  const cmd = h("pre", { class: "cmd", "aria-live": "polite", title: "The command maggot runs" });
   const runBtn = h("button", { class: "run-btn", type: "submit" }, "Run");
-  const skip = h("label", { class: "check", style: "font-size:13.5px" }, h("input", { type: "checkbox" }), h("span", null, "Skip requirement check"));
+  const skip = h("label", { class: "check", style: "font-size:13px" }, h("input", { type: "checkbox" }), h("span", null, "Skip requirement check"));
   skip.hidden = true;
   // Where files go: the run folder (review, then move) or a folder the user picks.
   const writesFiles = !m.outputs || !["stdout", "none", "inplace"].includes(m.outputs.kind);
@@ -378,61 +397,23 @@ async function toolPage(spec) {
     } catch (err) { cmd.classList.add("err"); cmd.textContent = err.message; }
   }, 120);
   const form = buildForm(m.inputs || [], saved, preview);
-  const formEl = h("form", { class: "form", novalidate: true },
+  const options = (outControl || warmBox)
+    ? h("div", { class: "fieldset tp-options" }, h("h3", { class: "group-title" }, "Options"), outControl, warmBox ? h("div", { class: "field" }, warmBox) : null)
+    : null;
+  if (options) form.el.append(options);
+  const formEl = h("form", { class: "form tp-form", novalidate: true, "aria-label": "Inputs" },
     form.el,
-    h("div", { class: "cmdline" }, outControl, cmd),
-    // sticky: Run / Reset stay at the bottom of the screen while a long form scrolls
-    h("div", { class: "go" }, runBtn, skip,
-      h("button", { class: "btn small quiet", type: "button", onclick: () => form.set(null) }, "Reset form")));
+    h("div", { class: "tp-dock" },
+      cmd,
+      h("div", { class: "go" }, runBtn, skip,
+        h("button", { class: "btn quiet", type: "button", onclick: () => form.set(null) }, "Reset"))));
   preview();
 
-  // run panel + history
-  const history = h("ul", { class: "history" });
-  const deleteAll = h("button", { class: "btn small quiet danger", type: "button" }, "Delete all");
-  const historyPanel = h("section", { class: "panel", "aria-label": "Past runs" },
-    h("div", { class: "panel-head" }, h("h2", null, "Past runs"), deleteAll), history);
-  deleteAll.addEventListener("click", async () => {
-    if (!(await confirmDialog(`Delete all runs of ${m.name}?`,
-      "This deletes every finished run of this tool and its output files. Runs still in progress are kept.", "Delete all", true))) return;
-    try {
-      const res = await del(`/api/runs?tool=${q(m.id)}`);
-      if (runView.meta && runView.meta.status !== "running") runView.idle();
-      toast(`Deleted ${res.deleted} run${res.deleted === 1 ? "" : "s"}.`);
-      loadHistory();
-    } catch (err) { toast(err.message, true); }
-  });
   const runView = new RunView({
-    onFinish: (meta) => { loadHistory(meta.id); toast(meta.status === "succeeded" ? `${m.name} finished.` : `${m.name}: ${meta.status}.`, meta.status !== "succeeded"); },
+    onFinish: (meta) => { loadHistory(); toast(meta.status === "succeeded" ? `${m.name} finished.` : `${m.name}: ${meta.status}.`, meta.status !== "succeeded"); },
     onReuse: (values) => { form.set(values); toast("Form filled from this run."); },
     onTaken: () => loadHistory(),
   });
-
-  async function loadHistory(activeId) {
-    const { runs } = await get(`/api/runs?tool=${q(m.id)}&limit=15`);
-    historyPanel.hidden = !runs.length;
-    clear(history, runs.map((r) => {
-      const running = r.status === "running";
-      const remove = h("button", {
-        class: "btn small quiet danger", type: "button", disabled: running,
-        title: running ? "Cancel the run before deleting it" : null,
-        "aria-label": `Delete run from ${ago(r.started)}`,
-      }, "Delete");
-      remove.addEventListener("click", async () => {
-        if (!(await confirmDialog("Delete this run?", "This deletes the run and its output files.", "Delete", true))) return;
-        try {
-          await del(`/api/runs/${r.id}`);
-          if (runView.id === r.id) runView.idle();
-          loadHistory(runView.id);
-        } catch (err) { toast(err.message, true); }
-      });
-      return h("li", null,
-        h("button", {
-          class: "pick", type: "button", "aria-current": String(r.id === activeId),
-          onclick: () => { runView.show(r.id); loadHistory(r.id); },
-        }, h("span", { class: "status " + r.status }), h("span", null, ago(r.started)), h("span", { class: "when" }, duration(r.started, r.ended))),
-        remove);
-    }));
-  }
 
   formEl.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -444,44 +425,145 @@ async function toolPage(spec) {
         keep_warm: wp && wp.on ? wp.minutes : 0,
       });
       await runView.show(meta.id);
-      loadHistory(meta.id);
+      loadHistory();
     } catch (err) {
       toast(err.message, true);
       if (err.status === 409 && err.data.missing) skip.hidden = false;
     } finally { runBtn.disabled = false; }
   });
 
-  // about
+  // ---------- history tab: list | selected run ----------
+  const historyList = h("ul", { class: "history" });
+  const historyView = new RunView({
+    emptyText: "Pick a run on the left to see its output and files.",
+    onReuse: (values) => { form.set(values); select("run"); toast("Form filled from this run."); },
+    onTaken: () => loadHistory(),
+  });
+  const deleteAll = h("button", { class: "btn small quiet danger", type: "button" }, "Delete all");
+  deleteAll.addEventListener("click", async () => {
+    if (!(await confirmDialog(`Delete all runs of ${m.name}?`,
+      "This deletes every finished run of this tool and its output files. Runs still in progress are kept.", "Delete all", true))) return;
+    try {
+      const res = await del(`/api/runs?tool=${q(m.id)}`);
+      historyView.idle();
+      if (runView.meta && runView.meta.status !== "running") runView.idle();
+      toast(`Deleted ${res.deleted} run${res.deleted === 1 ? "" : "s"}.`);
+      loadHistory();
+    } catch (err) { toast(err.message, true); }
+  });
+  let historyActive = params.get("run");
+  async function loadHistory() {
+    const { runs } = await get(`/api/runs?tool=${q(m.id)}&limit=50`);
+    countBadge.textContent = runs.length ? String(runs.length) : "";
+    deleteAll.hidden = !runs.length;
+    clear(historyList, runs.length ? runs.map((r) => {
+      const running = r.status === "running";
+      const remove = h("button", {
+        class: "btn small quiet danger", type: "button", disabled: running,
+        title: running ? "Cancel the run before deleting it" : null,
+        "aria-label": `Delete run from ${ago(r.started)}`,
+      }, "Delete");
+      remove.addEventListener("click", async () => {
+        if (!(await confirmDialog("Delete this run?", "This deletes the run and its output files.", "Delete", true))) return;
+        try {
+          await del(`/api/runs/${r.id}`);
+          if (historyView.id === r.id) historyView.idle();
+          if (runView.id === r.id) runView.idle();
+          loadHistory();
+        } catch (err) { toast(err.message, true); }
+      });
+      return h("li", null,
+        h("button", {
+          class: "pick", type: "button", "aria-current": String(r.id === historyActive),
+          onclick: () => { historyActive = r.id; historyView.show(r.id); loadHistory(); setURL({ run: r.id }); },
+        }, h("span", { class: "status " + r.status }), h("span", null, ago(r.started)), h("span", { class: "when" }, duration(r.started, r.ended))),
+        remove);
+    }) : h("li", { class: "empty-note" }, "No runs yet."));
+    return runs;
+  }
+
+  // ---------- code and docs tabs ----------
   const files = h("div", { class: "code-browser" });
-  const about = h("details", { class: "panel", style: "margin-top:28px" },
-    h("summary", { class: "panel-head", style: "cursor:pointer" }, h("h2", null, "About this tool and its code")),
-    h("div", { class: "panel-body" },
-      h("div", { class: "row", style: "flex-wrap:wrap;margin-bottom:14px" },
-        h("button", { class: "btn small", type: "button", onclick: () => openTool(tool) }, "Show folder")),
-      h("dl", { class: "kv" },
-        h("dt", null, "Folder"), h("dd", null, h("code", null, tool.dir)),
-        h("dt", null, "Without maggot"), h("dd", null, h("code", null, tool.direct + " …")),
-        h("dt", null, "From an agent"), h("dd", null, h("code", null, `maggot run ${tool.ref} -- …`))),
-      tool.readme ? h("div", { style: "margin-top:18px" }, renderMarkdown(tool.readme)) : null,
-      h("h3", { style: "font-size:15px;margin:22px 0 10px" }, "Files"),
-      files));
-  about.addEventListener("toggle", () => { if (about.open && !files.childNodes.length) loadFiles(tool, files); }, { once: false });
+  const docs = h("div", { class: "tp-docs" },
+    h("dl", { class: "kv" },
+      h("dt", null, "Folder"), h("dd", null, h("code", null, tool.dir)),
+      h("dt", null, "Without maggot"), h("dd", null, h("code", null, tool.direct + " …")),
+      h("dt", null, "From an agent"), h("dd", null, h("code", null, `maggot run ${tool.ref} -- …`))),
+    tool.readme ? renderMarkdown(tool.readme) : h("p", { class: "muted" }, "This tool has no README."));
+  const secrets = h("div", { class: "tp-settings" });
+  const hasSecrets = (tool.env || []).some((e) => e.secret);
 
-  clear(main,
-    plate,
-    draft ? draftNote(draft, m) : null,
-    h("p", { class: "lede" }, m.description),
-    reqs, warmBox, secrets,
-    h("div", { class: "work" }, formEl, h("div", { class: "stack" }, runView.el, historyPanel)),
-    about);
-  page = { cleanup: () => { runView.stop(); clearInterval(warmTimer); } };
+  // ---------- tabs ----------
+  const countBadge = h("span", { class: "tab-count" });
+  const tabDefs = [
+    ["run", "Run"], ["history", ["History", countBadge]], ["code", "Code"], ["docs", "Docs"],
+    hasSecrets ? ["settings", "Settings"] : null,
+  ].filter(Boolean);
+  const panels = {
+    run: h("div", { class: "tp-split" }, formEl, h("div", { class: "tp-result" }, runView.el)),
+    history: h("div", { class: "tp-split tp-split-list" },
+      h("div", { class: "tp-list" }, h("div", { class: "tp-list-head" }, h("h2", null, "Runs"), deleteAll), historyList),
+      h("div", { class: "tp-result" }, historyView.el)),
+    code: files,
+    docs,
+    settings: secrets,
+  };
+  const tabButtons = {};
+  const tabBar = h("div", { class: "tp-tabs", role: "tablist", "aria-label": "Tool sections" },
+    tabDefs.map(([id, label]) => {
+      const b = h("button", { type: "button", role: "tab", id: "tab-" + id, "aria-controls": "panel-" + id }, label);
+      b.addEventListener("click", () => select(id));
+      tabButtons[id] = b;
+      return b;
+    }));
+  tabBar.addEventListener("keydown", (e) => {
+    const ids = tabDefs.map(([id]) => id);
+    const i = ids.indexOf(current);
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      const next = ids[(i + (e.key === "ArrowRight" ? 1 : ids.length - 1)) % ids.length];
+      select(next);
+      tabButtons[next].focus();
+    }
+  });
+  const panelEls = {};
+  for (const [id] of tabDefs) {
+    panelEls[id] = h("section", { class: "tp-panel tp-panel-" + id, role: "tabpanel", id: "panel-" + id, "aria-labelledby": "tab-" + id, hidden: true }, panels[id]);
+  }
+  let current = null;
+  const loaded = {};
+  function setURL(extra) {
+    const p = new URLSearchParams();
+    if (current && current !== "run") p.set("tab", current);
+    for (const [k, v] of Object.entries(extra || {})) if (v) p.set(k, v);
+    const qs = p.toString();
+    history.replaceState(null, "", "#/tool/" + encodeURIComponent(tool.ref) + (qs ? "?" + qs : ""));
+  }
+  function select(id) {
+    if (!panelEls[id]) id = "run";
+    current = id;
+    for (const [tid, b] of Object.entries(tabButtons)) {
+      const on = tid === id;
+      b.setAttribute("aria-selected", String(on));
+      b.tabIndex = on ? 0 : -1;
+      panelEls[tid].hidden = !on;
+    }
+    if (id === "code" && !loaded.code) { loaded.code = true; loadFiles(tool, files); }
+    if (id === "settings" && !loaded.settings) { loaded.settings = true; renderSecrets(tool, secrets); }
+    setURL(id === "history" && historyActive ? { run: historyActive } : null);
+  }
 
-  const params = new URLSearchParams(query || "");
-  const runParam = params.get("run");
-  if (params.has("code")) { about.open = true; about.scrollIntoView(); }
-  loadHistory(runParam);
-  if (runParam) runView.show(runParam).catch(() => {});
-  renderSecrets(tool, secrets);
+  main.classList.add("tool-main");
+  clear(main, h("div", { class: "tp" }, header, tabBar, Object.values(panelEls)));
+  page = { cleanup: () => { runView.stop(); historyView.stop(); clearInterval(warmTimer); main.classList.remove("tool-main"); } };
+
+  const startTab = params.get("tab") || (params.has("code") ? "code" : params.get("run") ? "history" : "run");
+  select(startTab);
+  const runs = await loadHistory();
+  // The result pane opens on the latest run, so the last result is right there.
+  if (runs.length) runView.show(runs[0].id).catch(() => {});
+  if (historyActive) historyView.show(historyActive).catch(() => {});
+  else if (runs.length) { historyActive = runs[0].id; historyView.show(runs[0].id).catch(() => {}); loadHistory(); }
   checkHealth(tool, reqs);
 }
 
@@ -625,7 +707,7 @@ function testChip(tool) {
 function renderSecrets(tool, el) {
   const secrets = (tool.env || []).filter((e) => e.secret);
   if (!secrets.length) return clear(el);
-  clear(el, h("div", { class: "panel", style: "margin-top:16px" },
+  clear(el, h("div", { class: "panel" },
     h("div", { class: "panel-head" }, h("h2", null, "Secrets")),
     h("div", { class: "panel-body" },
       h("p", { class: "muted", style: "margin:0 0 10px;font-size:13.5px" }, "Saved in your system keychain, never in the toolbox."),
