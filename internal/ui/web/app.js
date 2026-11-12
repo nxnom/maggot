@@ -639,11 +639,29 @@ async function loadFiles(tool, el, startPath) {
     const text = file.text.replace(/\n$/, "");
     const lang = language(f.path, text);
     const lines = highlightLines(text, lang);
+    const source = () => h("pre", { class: "code", tabindex: "0" }, lines.map((l) => h("span", { class: "ln" }, l, "\n")));
+    const body = h("div", { class: "code-body" });
+    // Markdown opens rendered; "Source" shows the raw text.
+    let toggle = null;
+    if (lang === "markdown") {
+      const mode = (m) => {
+        toggle.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
+        clear(body, m === "preview" ? h("div", { class: "md-preview", tabindex: "0" }, renderMarkdown(text)) : source());
+      };
+      toggle = h("span", { class: "view-toggle", role: "group", "aria-label": "View" },
+        h("button", { type: "button", "data-mode": "preview", onclick: () => mode("preview") }, "Preview"),
+        h("button", { type: "button", "data-mode": "source", onclick: () => mode("source") }, "Source"));
+      mode("preview");
+    } else {
+      clear(body, source());
+    }
     clear(view,
       h("div", { class: "code-head" }, h("code", null, f.path),
-        h("span", { class: "muted" }, [lang ? LANG_NAMES[lang] : null, `${lines.length} lines`, bytes(file.size)].filter(Boolean).join(" · "))),
+        h("span", { class: "code-head-right" },
+          h("span", { class: "muted" }, [lang ? LANG_NAMES[lang] : null, `${lines.length} lines`, bytes(file.size)].filter(Boolean).join(" · ")),
+          toggle)),
       file.truncated ? h("p", { class: "notice", style: "margin:8px" }, "Only the first 512 KB is shown.") : null,
-      h("pre", { class: "code", tabindex: "0" }, lines.map((l) => h("span", { class: "ln" }, l, "\n"))));
+      body);
   }
   // Build a folder tree from the flat paths: folders first, then files,
   // each sorted by name. Folders start closed.
