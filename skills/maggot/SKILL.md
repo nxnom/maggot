@@ -14,8 +14,9 @@ not matter: the toolbox is the memory.
 Before you write code for a utility that could be reused, search maggot. This
 includes requests like "build a tool for X" or "make a CLI that does Y": a tool
 for X may already exist. Reuse a
-fitting tool. Write a new tool only when nothing fits, and then save it to the
-toolbox so it is never written again. One-off code that is specific to the
+fitting tool. Write a new tool only when nothing fits, and only after the user
+approved your plan for it (see "Create a tool"); then save it to the toolbox
+so it is never written again. One-off code that is specific to the
 current project does not belong in maggot.
 
 ## Setup check
@@ -60,14 +61,31 @@ differs (like the text). Save a preset only when the user asks:
 Raw args: everything after `--` goes to the tool unchanged; input defaults
 apply only with `--inputs` (entry.args are always added).
 
-If a tool almost fits, improve it instead of writing a second similar tool:
+If a tool almost fits, improve it instead of writing a second similar tool.
+Propose the change first and wait for approval (step 1 below). Then
 `maggot draft <tool>` copies it into the drafts folder; change the copy, bump
-`version`, and continue with steps 3–5 below.
+`version`, and continue with steps 4–6 below.
 
 ## Create a tool
 
-1. Read `maggot guide` once: it is the full manifest, run contract and test format.
-2. Pick the simplest kind and scaffold a working template:
+1. **Propose first, then wait.** Do not scaffold or write any file yet. Search
+   first (see above), then reply with a short plan and stop until the user
+   approves it:
+   - what the tool does, in one or two sentences, and its id and name
+   - existing tools you found and why they don't fit (or that you will
+     improve one instead)
+   - the kind (bin, sh, python, deno) and why; required programs and versions
+   - the inputs (options in the form) with defaults and choices
+   - the outputs: what files or text it produces, and where
+   - how it will be tested (offline fixtures; what is marked network or paid)
+   - open questions, each with your suggested answer
+
+   Change the plan from the user's feedback and ask again if it changed a lot.
+   Build only after a clear yes ("ok", "go ahead", "build it"). Skip the
+   proposal only when the user explicitly said to build without asking, or
+   already gave a full spec and said to build it.
+2. Read `maggot guide` once: it is the full manifest, run contract and test format.
+3. Pick the simplest kind and scaffold a working template:
    - `--lang bin --bin <program>`: an installed program already does the job
      (yt-dlp, ffmpeg, magick). No code: only `tool.json` mapping inputs to the
      program's flags. Never write a script just to wrap another CLI.
@@ -78,16 +96,16 @@ If a tool almost fits, improve it instead of writing a second similar tool:
    `maggot new <id> --lang <kind>` creates it in the maggot drafts folder (it
    prints the path). Do not use a temporary or scratchpad folder: the user
    tries the tool later. Never depend on files in the current project.
-3. Write the program (none for bin). Fill `tool.json`: clear `description`,
+4. Write the program (none for bin). Fill `tool.json`: clear `description`,
    `tags` with search synonyms, `requires` with install hints, `inputs` for the
    options people use (plus an `args` input for the rest), `outputs`.
-4. Write `tests/cases.json` with small local fixtures, including a failure
+5. Write `tests/cases.json` with small local fixtures, including a failure
    case, and `expect.checks` that verify the output content (e.g. ffprobe).
    Tests must be free and offline: mark cases that need the internet with
    `"network": true` and cases that cost money (paid APIs, image/video
    generation, LLM calls) with `"paid": true`; both are skipped unless the user
    asks. Run `maggot test <dir>` until every case passes.
-5. Hand it to the user. Do not import it yourself. Tell them the folder path
+6. Hand it to the user. Do not import it yourself. Tell them the folder path
    and the command to try it in the web UI:
 
        maggot try <dir>
