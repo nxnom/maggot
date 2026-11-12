@@ -645,17 +645,60 @@ async function loadFiles(tool, el, startPath) {
       file.truncated ? h("p", { class: "notice", style: "margin:8px" }, "Only the first 512 KB is shown.") : null,
       h("pre", { class: "code", tabindex: "0" }, lines.map((l) => h("span", { class: "ln" }, l, "\n"))));
   }
-  const items = res.files.map((f) => {
-    if (f.skipped) return h("li", null, h("span", { class: "skipped", title: "Not listed" }, f.path));
-    const btn = h("button", { type: "button" }, h("span", null, f.path), h("span", { class: "size" }, bytes(f.size)));
-    btn.addEventListener("click", () => show(f, btn));
-    return h("li", null, btn);
-  });
-  clear(list, items);
+  // Build a folder tree from the flat paths: folders first, then files,
+  // each sorted by name. Folders start closed.
+  const root = { dirs: new Map(), files: [] };
+  for (const f of res.files) {
+    const parts = f.path.replace(/\/$/, "").split("/");
+    let node = root;
+    const last = f.skipped ? parts.length : parts.length - 1;
+    for (let i = 0; i < last; i++) {
+      if (!node.dirs.has(parts[i])) node.dirs.set(parts[i], { dirs: new Map(), files: [], path: parts.slice(0, i + 1).join("/") });
+      node = node.dirs.get(parts[i]);
+    }
+    if (f.skipped) node.skipped = true;
+    else node.files.push({ name: parts[parts.length - 1], file: f });
+  }
+  const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+  const fileButtons = new Map();
+  const dirToggles = new Map();
+  function renderNode(node, depth) {
+    const items = [];
+    for (const name of [...node.dirs.keys()].sort(byName)) {
+      const dir = node.dirs.get(name);
+      const pad = { style: `padding-left:${10 + depth * 14}px` };
+      if (dir.skipped) {
+        items.push(h("li", null, h("span", { class: "skipped", ...pad, title: "maggot does not list this folder" },
+          h("span", { class: "chev", "aria-hidden": "true" }), h("span", { class: "dir-name" }, name), h("span", { class: "size" }, "not listed"))));
+        continue;
+      }
+      const children = h("ul", { class: "tree", hidden: true }, renderNode(dir, depth + 1));
+      const toggle = h("button", { type: "button", class: "dir", "aria-expanded": "false", ...pad },
+        h("span", { class: "chev", "aria-hidden": "true" }), h("span", { class: "dir-name" }, name));
+      const setOpen = (open) => { toggle.setAttribute("aria-expanded", String(open)); children.hidden = !open; };
+      toggle.addEventListener("click", () => setOpen(children.hidden));
+      dirToggles.set(dir.path, setOpen);
+      items.push(h("li", null, toggle, children));
+    }
+    for (const { name, file } of node.files.sort((a, b) => byName(a.name, b.name))) {
+      const btn = h("button", { type: "button", style: `padding-left:${24 + depth * 14}px`, title: file.path },
+        h("span", { class: "file-name" }, name), h("span", { class: "size" }, bytes(file.size)));
+      btn.addEventListener("click", () => show(file, btn));
+      fileButtons.set(file.path, btn);
+      items.push(h("li", null, btn));
+    }
+    return items;
+  }
+  clear(list, renderNode(root, 0));
   clear(el, list, view);
-  const wanted = startPath && [...list.querySelectorAll("button")].find((b) => b.firstChild.textContent === startPath);
-  const first = wanted || list.querySelector("button");
-  if (first) first.click();
+  // Open the wanted file (and its folders), else the first file at the top level.
+  const firstTop = root.files.sort((a, b) => byName(a.name, b.name))[0];
+  const target = (startPath && fileButtons.has(startPath) && startPath) || (firstTop && firstTop.file.path) || [...fileButtons.keys()][0];
+  if (target) {
+    const parts = target.split("/");
+    for (let i = 1; i < parts.length; i++) dirToggles.get(parts.slice(0, i).join("/"))?.(true);
+    fileButtons.get(target).click();
+  }
 }
 
 function draftNote(draft, m) {
