@@ -50,6 +50,13 @@ folder is (`maggot toolbox add <path>`) or create one (`maggot toolbox init <pat
    (for text results), `stderr_tail` and `next` steps. Run from the user's
    project folder so relative paths work.
 
+Presets: `info` lists the user's saved presets (`presets`, each with a `use`
+value). When the user names one ("my narrator voice") or one clearly fits,
+add `--preset <use>` to prepare and run; `--inputs` then only needs what
+differs (like the text). Save a preset only when the user asks:
+`maggot presets save <tool> "<name>" --inputs '{...}'` (personal), or with
+`--toolbox` to share it through the toolbox.
+
 Raw args: everything after `--` goes to the tool unchanged; input defaults
 apply only with `--inputs` (entry.args are always added).
 

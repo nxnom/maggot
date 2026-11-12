@@ -193,6 +193,18 @@ For `files` tools, always support an output folder flag and declare it in
 previews the files it finds there. A tool without `dir_flag` can still write
 files wherever it wants; it just has no managed output folder.
 
+## Presets
+
+Users save named input values per tool ("narrator voice", "1080p MP4"):
+
+- personal: `<data dir>/presets/<id>/<name>.json`, only on that machine;
+- toolbox: `tools/<id>/presets/<name>.json`, shared with the tool. Paths
+  inside the tool folder are stored as `{tool}/...`.
+
+A preset file is `{"label": "...", "description": "...", "values": {...}}`.
+A tool may ship useful presets in its `presets/` folder. The tool program
+never reads presets; maggot turns them into normal arguments.
+
 ## Run contract
 
 - Input is argv. maggot runs `<interpreter...> <abs entry path> <entry.args...> <args...>`,

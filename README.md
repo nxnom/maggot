@@ -60,6 +60,7 @@ maggot run text-upper -- --upper --out out notes.txt
 | `run <tool> --review -- …`, `take <run> <folder>` | hold output for review in the web UI, then move (not copy) the approved files into place |
 | `runs`, `runs rm <run>` | list or delete saved runs |
 | `open <tool>` | open a tool's folder in the file manager |
+| `presets <tool>`, `presets save/rm`, `run --preset <name>` | saved input values per tool, personal or shared in the toolbox |
 | `warm <tool> --for 30m`, `warm list`, `warm stop` | keep a slow-loading tool (e.g. a model) in memory so the next runs start fast |
 | `clean [runs\|drafts\|uploads\|all]` | show or delete leftovers in the data folder (never toolboxes or projects) |
 | `test <dir\|tool>`, `test --all` | validate and run `tests/cases.json`; network and paid cases only run with `--network` / `--paid`. Results show in `list`, `info` and the UI |
