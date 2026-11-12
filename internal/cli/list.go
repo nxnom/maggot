@@ -28,15 +28,21 @@ type toolSummary struct {
 	Dir         string          `json:"dir"`
 }
 
-func summarize(t *toolbox.Tool) toolSummary {
+// summarize is the list/search row for a tool, with its last test result
+// (the same record info shows).
+func summarize(t *toolbox.Tool, tested map[string]testlog.Record) toolSummary {
 	cats := t.Manifest.Categories
 	if cats == nil {
 		cats = []string{}
 	}
-	return toolSummary{
+	s := toolSummary{
 		Ref: t.Ref(), ID: t.Manifest.ID, Version: t.Manifest.Version, Name: t.Manifest.Name,
 		Description: t.Manifest.Description, Categories: cats, Toolbox: t.Toolbox.Handle, Dir: t.Dir,
 	}
+	if rec, ok := tested[t.Ref()]; ok {
+		s.LastTest = &rec
+	}
+	return s
 }
 
 func (a *app) listCmd() *cobra.Command {
@@ -58,11 +64,7 @@ func (a *app) listCmd() *cobra.Command {
 				if category != "" && !hasCategory(t.Manifest, category) {
 					continue
 				}
-				r := summarize(t)
-				if rec, ok := tested[t.Ref()]; ok {
-					r.LastTest = &rec
-				}
-				rows = append(rows, r)
+				rows = append(rows, summarize(t, tested))
 			}
 			problems := e.AllProblems()
 			if asJSON {

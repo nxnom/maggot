@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -35,5 +37,27 @@ func TestSearchCommand(t *testing.T) {
 	}
 	if _, out, _ := run(t, "search", "remove", "background"); !strings.Contains(out, "MATCHED") || !strings.Contains(out, "remove,background") {
 		t.Fatalf("matched column: %s", out)
+	}
+}
+
+func TestSearchShowsTestStatus(t *testing.T) {
+	isolate(t)
+	newToolbox(t, "main")
+	run(t, "new", "text-tool", "--lang", "sh")
+	run(t, "import", "--yes", filepath.Join(os.Getenv("MAGGOT_DATA_DIR"), "drafts", "text-tool"))
+	run(t, "test", "text-tool")
+	_, out, _ := run(t, "search", "text", "files", "--json")
+	var res struct {
+		Results []struct {
+			Ref      string
+			LastTest *struct {
+				OK    bool
+				Cases []struct{ Name, Status string }
+			} `json:"last_test"`
+		}
+	}
+	json.Unmarshal([]byte(out), &res)
+	if len(res.Results) == 0 || res.Results[0].LastTest == nil || !res.Results[0].LastTest.OK || len(res.Results[0].LastTest.Cases) != 3 {
+		t.Fatalf("search should carry the test record: %s", out)
 	}
 }

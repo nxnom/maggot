@@ -36,17 +36,17 @@ type prepareResult struct {
 	Ref string `json:"ref"`
 	// Ready is true only when nothing must be fixed (problems) and nothing
 	// must be decided (decisions).
-	Ready     bool       `json:"ready"`
-	Problems  []Problem  `json:"problems"`
-	Decisions []Decision `json:"decisions"`
-	Warnings  []string   `json:"warnings"`
-	Inputs   map[string]any `json:"inputs,omitempty"` // values after defaults
-	Argv     []string       `json:"argv,omitempty"`
-	Command  string         `json:"command,omitempty"`
-	Cwd      string         `json:"cwd"`
-	Output   map[string]any `json:"output"`
-	Warm     string         `json:"warm,omitempty"` // cold, loading, warm
-	Next     string         `json:"next,omitempty"`
+	Ready     bool           `json:"ready"`
+	Problems  []Problem      `json:"problems"`
+	Decisions []Decision     `json:"decisions"`
+	Warnings  []string       `json:"warnings"`
+	Inputs    map[string]any `json:"inputs,omitempty"` // values after defaults
+	Argv      []string       `json:"argv,omitempty"`
+	Command   string         `json:"command,omitempty"`
+	Cwd       string         `json:"cwd"`
+	Output    map[string]any `json:"output"`
+	Warm      string         `json:"warm,omitempty"` // cold, loading, warm
+	Next      string         `json:"next,omitempty"`
 
 	args   []string // tool args the run would use
 	outDir string   // real output folder, when known

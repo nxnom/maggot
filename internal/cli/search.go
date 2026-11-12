@@ -6,6 +6,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/nxnom/maggot/internal/search"
+	"github.com/nxnom/maggot/internal/testlog"
 	"github.com/spf13/cobra"
 )
 
@@ -29,12 +30,13 @@ func (a *app) searchCmd() *cobra.Command {
 				hits = hits[:limit]
 			}
 			query := strings.Join(args, " ")
+			tested, _ := testlog.Load()
 			// No word matched: show the most similar tools anyway (typos,
 			// other word forms), clearly marked as not a direct match.
 			var closest []toolSummary
 			if len(hits) == 0 {
 				for _, t := range search.Closest(tools, query, 3) {
-					closest = append(closest, summarize(t))
+					closest = append(closest, summarize(t, tested))
 				}
 			}
 			if asJSON {
@@ -45,7 +47,7 @@ func (a *app) searchCmd() *cobra.Command {
 				}
 				rows := make([]row, 0, len(hits))
 				for _, h := range hits {
-					rows = append(rows, row{summarize(h.Tool), h.Score, h.Matched})
+					rows = append(rows, row{summarize(h.Tool, tested), h.Score, h.Matched})
 				}
 				out := map[string]any{"query": query, "results": rows}
 				if len(hits) == 0 {
