@@ -178,3 +178,22 @@ func TestBuildArgsBinTool(t *testing.T) {
 		t.Fatalf("argv: %q", argv)
 	}
 }
+
+func TestOneOf(t *testing.T) {
+	m, err := manifest.Parse([]byte(`{"schema":1,"id":"tts","version":"1.0.0","name":"T","description":"d","entry":{"path":"run"},
+	  "inputs":[{"name":"text","type":"text","arg":{"flag":"--text"}},{"name":"lines","type":"file","arg":{"flag":"--lines"}},
+	            {"name":"takes","type":"integer","default":1,"arg":{"flag":"--takes"}}],
+	  "one_of":[["text","lines"]]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for in, ok := range map[string]bool{`{}`: false, `{"text":"  "}`: false, `{"text":"hi"}`: true, `{"lines":"a.json"}`: true, `{"text":"a","lines":"b"}`: true} {
+		_, err := BuildArgs(m, values(t, in), "")
+		if (err == nil) != ok {
+			t.Errorf("%s: err=%v", in, err)
+		}
+		if err != nil && !strings.Contains(err.Error(), "text or lines: give at least one of these") {
+			t.Errorf("message: %v", err)
+		}
+	}
+}

@@ -36,7 +36,10 @@ type Manifest struct {
 	Requires []Requirement `json:"requires,omitempty"`
 	Env      []EnvVar      `json:"env,omitempty"`
 	Inputs   []Input       `json:"inputs,omitempty"`
-	Outputs  *Outputs      `json:"outputs,omitempty"`
+	// OneOf lists groups of inputs where at least one must have a value,
+	// e.g. [["text", "lines"]]: give text, or a lines file, or both.
+	OneOf   [][]string `json:"one_of,omitempty"`
+	Outputs *Outputs   `json:"outputs,omitempty"`
 	// Warm says the tool can stay loaded in memory between runs.
 	Warm     *Warm    `json:"warm,omitempty"`
 	Examples []string `json:"examples,omitempty"`

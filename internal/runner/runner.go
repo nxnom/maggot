@@ -102,6 +102,17 @@ func BuildArgs(m *manifest.Manifest, values map[string]any, outDir string) ([]st
 			flags = append(flags, in.Arg.Flag, strs[0])
 		}
 	}
+	for _, group := range m.OneOf {
+		given := false
+		for _, name := range group {
+			if hasValue(m, values, name) {
+				given = true
+			}
+		}
+		if !given {
+			problems = append(problems, fmt.Sprintf("%s: give at least one of these", strings.Join(group, " or ")))
+		}
+	}
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("invalid inputs:\n  - %s", strings.Join(problems, "\n  - "))
 	}
@@ -112,6 +123,33 @@ func BuildArgs(m *manifest.Manifest, values map[string]any, outDir string) ([]st
 		flags = append(flags, m.Outputs.DirFlag, outDir)
 	}
 	return append(append(flags, extra...), positionals...), nil
+}
+
+// hasValue reports whether an input has a usable value (given or default).
+func hasValue(m *manifest.Manifest, values map[string]any, name string) bool {
+	for _, in := range m.Inputs {
+		if in.Name != name {
+			continue
+		}
+		v, ok := values[name]
+		if !ok || v == nil {
+			v = in.Default
+		}
+		switch x := v.(type) {
+		case nil:
+			return false
+		case string:
+			return strings.TrimSpace(x) != ""
+		case []any:
+			return len(x) > 0
+		case []string:
+			return len(x) > 0
+		case bool:
+			return x
+		}
+		return true
+	}
+	return false
 }
 
 func render(in manifest.Input, val any) []string {

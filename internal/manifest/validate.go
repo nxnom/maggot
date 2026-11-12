@@ -64,6 +64,20 @@ func (m *Manifest) Validate() error {
 	v.requires(m.Requires)
 	v.env(m.Env)
 	v.inputs(m.Inputs, m.Outputs)
+	known := map[string]bool{}
+	for _, in := range m.Inputs {
+		known[in.Name] = true
+	}
+	for i, group := range m.OneOf {
+		if len(group) < 2 {
+			v.add(fmt.Sprintf("one_of[%d]", i), "needs at least two input names")
+		}
+		for _, name := range group {
+			if !known[name] {
+				v.add(fmt.Sprintf("one_of[%d]", i), "unknown input %q", name)
+			}
+		}
+	}
 	if m.Warm != nil && len(m.Warm.Args) == 0 {
 		v.add("warm.args", `needs the args that start serve mode, e.g. ["--serve"]`)
 	}

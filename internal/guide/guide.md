@@ -162,6 +162,11 @@ the sort order). Check the program's docs for every flag you put in
 `entry.args` that callers might also pass, and say in the README which
 defaults can be overridden.
 
+When some inputs are alternatives (give text OR a file), list them in a
+top-level `one_of`; at least one input of each group must have a value:
+
+    "one_of": [["text", "lines"]]
+
 Optional per input: `label`, `description`, `required`, `default`, and form
 hints that do not change argv: `placeholder`, `group` (section title, e.g.
 `"Extras"`), `advanced: true` (hidden until the user opens advanced options).
