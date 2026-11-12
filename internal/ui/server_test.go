@@ -245,7 +245,7 @@ func TestRunOverHTTP(t *testing.T) {
 	// Output file download, with path escape attempts refused.
 	r2, _ := ts.client.Get(ts.URL + "/api/runs/" + meta.ID + "/files/ann.txt")
 	body, _ := io.ReadAll(r2.Body)
-	if r2.StatusCode != 200 || string(body) != "hello ann\n" || r2.Header.Get("Content-Security-Policy") != "sandbox" {
+	if r2.StatusCode != 200 || string(body) != "hello ann\n" {
 		t.Fatalf("file: %d %q", r2.StatusCode, body)
 	}
 	os.Symlink("/etc/hosts", filepath.Join(final.OutDir, "link"))
@@ -271,6 +271,15 @@ func TestRunOverHTTP(t *testing.T) {
 		t.Fatalf("reveal: %v", ts.opened)
 	}
 	ts.do(t, "POST", "/api/reveal", map[string]any{"run": meta.ID, "path": "../../x"}, 404, nil)
+	// Scriptable types are sandboxed; media, PDF and text are not (a sandbox
+	// would break them in their own tab).
+	for name, want := range map[string]string{"page.html": "sandbox", "pic.svg": "sandbox", "clip.mp4": "", "song.mp3": "", "photo.png": "", "notes.txt": ""} {
+		os.WriteFile(filepath.Join(final.OutDir, name), []byte("x"), 0o644)
+		rr, _ := ts.client.Get(ts.URL + "/api/runs/" + meta.ID + "/files/" + name)
+		if got := rr.Header.Get("Content-Security-Policy"); got != want {
+			t.Errorf("%s: CSP %q, want %q", name, got, want)
+		}
+	}
 	// PDFs are served without the sandbox so the browser's PDF viewer works.
 	os.WriteFile(filepath.Join(final.OutDir, "doc.pdf"), []byte("%PDF-1.4"), 0o644)
 	r5, _ := ts.client.Get(ts.URL + "/api/runs/" + meta.ID + "/files/doc.pdf")

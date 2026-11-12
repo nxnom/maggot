@@ -294,10 +294,7 @@ func (s *Server) apiRunFile(w http.ResponseWriter, r *http.Request) error {
 	}
 	mt := mimeOf(p)
 	w.Header().Set("Content-Type", mt)
-	// Output files are untrusted: a sandbox keeps HTML or SVG from running
-	// scripts. PDFs are left out because the sandbox also blocks the
-	// browser's PDF viewer.
-	if mt != "application/pdf" {
+	if needsSandbox(mt) {
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	}
 	f, err := os.Open(p)
@@ -334,4 +331,22 @@ func (s *Server) apiReveal(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return ok(w, map[string]bool{"ok": true})
+}
+
+// needsSandbox reports whether an output file must be served with a CSP
+// sandbox so it cannot run scripts (HTML, SVG, XML and unknown types).
+// Media, PDF and plain text are left out: they cannot run scripts here, and
+// a sandbox would break them when opened in their own tab (the browser's
+// media and PDF viewers load the file again from an origin without our
+// sign-in cookie).
+func needsSandbox(mt string) bool {
+	switch {
+	case mt == "image/svg+xml":
+		return true
+	case strings.HasPrefix(mt, "image/"), strings.HasPrefix(mt, "video/"), strings.HasPrefix(mt, "audio/"):
+		return false
+	case mt == "application/pdf", mt == "text/plain", mt == "text/csv", mt == "text/markdown", mt == "application/json":
+		return false
+	}
+	return true
 }
