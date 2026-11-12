@@ -50,9 +50,10 @@ maggot run text-upper -- --upper --out out notes.txt
 |---|---|
 | `toolbox init/add/list/remove/default` | create and register toolbox folders |
 | `list`, `search <words>` | find tools (`--json` for agents) |
-| `info <tool>` | manifest, README, and the direct command without maggot |
+| `info <tool>` | short view: inputs, readiness, tested cases, examples (`--full` for the manifest and README) |
+| `prepare <tool> --inputs '{…}' --out <dir>` | check a run without running it: inputs, requirements, output folder, exact command |
 | `doctor [tool]` | check required binaries, versions and env vars; `--install` asks before installing |
-| `run <tool> -- <args>` | run a tool in the current folder; `--inputs '{json}'` builds args from the manifest |
+| `run <tool> -- <args>` | run a tool in the current folder; `--inputs '{json}'` builds args from the manifest; `--json` prints one structured result (status, files, errors) |
 | `new <id> --lang bin\|sh\|python\|deno` | scaffold a working tool with tests, in the drafts folder |
 | `draft <tool>` | copy an installed tool into the drafts folder to change it |
 | `try <folder>` | open a tool folder in the web UI to try it before importing |

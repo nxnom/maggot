@@ -27,19 +27,27 @@ folder is (`maggot toolbox add <path>`) or create one (`maggot toolbox init <pat
 
 ## Use a tool
 
-1. `maggot search <words describing the task> --json` (also `maggot list --json`).
-2. `maggot info <tool> --json` — read the manifest, README, inputs and examples.
-   `last_test` shows whether the tool still works. If it failed, or only an
-   older version was tested, run `maggot test <tool>` first and fix the tool
-   if it is broken.
-3. `maggot doctor <tool> --json` — if binaries are missing, show the user the
-   install command from the output. Only run `maggot doctor <tool> --install --yes`
-   after the user agrees to install software.
-4. `maggot run <tool> -- <args>` — everything after `--` goes to the tool
-   unchanged (tool flags must come after `--`); the exit code is the tool's. Alternative: `maggot run <tool> --inputs '{"name": value}'`.
-   Run from the user's project folder so relative paths work. Input defaults
-   from `maggot info` apply only with `--inputs`; with raw args, pass what
-   you need yourself (entry.args are always added).
+1. **Find:** `maggot search <what the task does> --json`. With no direct
+   match it lists the closest tools; check them before building anything.
+   `maggot info <tool> --json` gives a short view: inputs (with their flags,
+   defaults, choices), readiness, and which test cases passed or were
+   skipped. Use `--full` only if you need the README.
+2. **Prepare:** `maggot prepare <tool> --inputs '{"name": value}' --out <folder> --json`
+   (or `-- <raw args>`). It checks the inputs and requirements, resolves
+   defaults, says where output goes, and returns the exact `next` command.
+   If `ready` is false, follow each problem's `fix`. Ask the user before
+   installing software (`maggot doctor <tool> --install --yes`) or setting a
+   secret. If the tool's last test failed, run `maggot test <tool>` first.
+3. **Run:** run the `next` command it printed:
+   `maggot run <tool> --json --inputs '...' --out <folder>`. The tool's own
+   output streams to stderr; stdout is one JSON result with `ok`,
+   `category` (ok, invalid_input, missing_requirement, missing_env,
+   tool_failed, cancelled), `files` (absolute paths it created), `stdout`
+   (for text results), `stderr_tail` and `next` steps. Run from the user's
+   project folder so relative paths work.
+
+Raw args: everything after `--` goes to the tool unchanged; input defaults
+apply only with `--inputs` (entry.args are always added).
 
 If a tool almost fits, improve it instead of writing a second similar tool:
 `maggot draft <tool>` copies it into the drafts folder; change the copy, bump
