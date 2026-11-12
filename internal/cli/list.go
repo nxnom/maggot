@@ -218,6 +218,9 @@ type briefInput struct {
 	Required    bool     `json:"required,omitempty"`
 	Default     any      `json:"default,omitempty"`
 	Choices     []string `json:"choices,omitempty"`
+	Min         *float64 `json:"min,omitempty"`
+	Max         *float64 `json:"max,omitempty"`
+	Accept      []string `json:"accept,omitempty"`
 	Arg         string   `json:"arg"`
 	Description string   `json:"description,omitempty"`
 }
@@ -228,7 +231,7 @@ func (a *app) briefInfo(t *toolbox.Tool, direct []string, last *testlog.Record) 
 	inputs := []briefInput{}
 	for _, in := range m.Inputs {
 		bi := briefInput{Name: in.Name, Type: string(in.Type), Required: in.Required, Default: in.Default,
-			Arg: argSummary(in), Description: in.Description}
+			Min: in.Min, Max: in.Max, Accept: in.Accept, Arg: argSummary(in), Description: in.Description}
 		for _, o := range in.Options {
 			bi.Choices = append(bi.Choices, o.Value)
 		}
@@ -259,6 +262,9 @@ func (a *app) briefInfo(t *toolbox.Tool, direct []string, last *testlog.Record) 
 	}
 	if m.Outputs != nil {
 		out["output"] = m.Outputs
+	}
+	if len(m.OneOf) > 0 {
+		out["one_of"] = m.OneOf // at least one input of each group is needed
 	}
 	if m.Warm != nil {
 		out["warm"] = true

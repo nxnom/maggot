@@ -103,6 +103,16 @@ func TestListAndInfo(t *testing.T) {
 		t.Fatalf("brief: %s", out)
 	}
 
+	// Limits show up in the short view.
+	addTool(t, dir, "limits", `{"schema":1,"id":"limits","version":"1.0.0","name":"L","description":"d","entry":{"path":"run"},
+	  "inputs":[{"name":"takes","type":"integer","min":1,"max":20,"default":1,"arg":{"flag":"--takes"}},
+	            {"name":"text","type":"string","arg":{"flag":"--text"}},{"name":"lines","type":"file","accept":[".json"],"arg":{"flag":"--lines"}}],
+	  "one_of":[["text","lines"]]}`, "#!/bin/sh\n")
+	_, out, _ = run(t, "info", "limits", "--json")
+	if !strings.Contains(out, `"min": 1`) || !strings.Contains(out, `"max": 20`) || !strings.Contains(out, `"accept": [`) || !strings.Contains(out, `"one_of"`) {
+		t.Fatalf("limits: %s", out)
+	}
+
 	code, out, _ = run(t, "info", "hello")
 	if code != 0 || !strings.Contains(out, "maggot run personal/hello") || !strings.Contains(out, "<positional>") {
 		t.Fatalf("info text: %s", out)
