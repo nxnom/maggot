@@ -12,6 +12,7 @@ import (
 	"github.com/nxnom/maggot/internal/runner"
 	"github.com/nxnom/maggot/internal/testlog"
 	"github.com/nxnom/maggot/internal/toolbox"
+	"github.com/nxnom/maggot/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -103,11 +104,14 @@ func hasCategory(m *manifest.Manifest, c string) bool {
 }
 
 func (a *app) infoCmd() *cobra.Command {
-	var asJSON bool
+	var asJSON, full bool
 	cmd := &cobra.Command{
 		Use:   "info <tool>",
-		Short: "Show a tool's manifest, README and how to run it directly",
-		Args:  cobra.ExactArgs(1),
+		Short: "Show what a tool does, its inputs, whether it is ready, and how to run it",
+		Long: `Show a short agent-friendly view of a tool: purpose, inputs (with how each
+becomes an argument, defaults and choices), readiness, what was tested, and
+examples. --full adds the whole manifest and the README.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := a.loadEnv()
 			if err != nil {
@@ -131,11 +135,14 @@ func (a *app) infoCmd() *cobra.Command {
 					last = &rec
 				}
 			}
-			if asJSON {
+			if asJSON && full {
 				return writeJSON(a.stdout, map[string]any{
 					"ref": t.Ref(), "toolbox": t.Toolbox.Handle, "dir": t.Dir,
 					"direct_command": direct, "manifest": t.Manifest, "readme": readme, "last_test": last,
 				})
+			}
+			if asJSON {
+				return writeJSON(a.stdout, a.briefInfo(t, direct, last))
 			}
 			m := t.Manifest
 			fmt.Fprintf(a.stdout, "%s %s — %s\n%s\n\n", t.Ref(), m.Version, m.Name, m.Description)
@@ -191,14 +198,72 @@ func (a *app) infoCmd() *cobra.Command {
 					fmt.Fprintf(a.stdout, "  %s\n", ex)
 				}
 			}
-			if readme != "" {
+			if readme != "" && full {
 				fmt.Fprintf(a.stdout, "\n%s", readme)
+			} else if readme != "" {
+				fmt.Fprintf(a.stdout, "\n(README: maggot info %s --full)\n", t.Ref())
 			}
+			fmt.Fprintf(a.stdout, "\nnext: maggot prepare %s --inputs '{...}' --json\n", t.Ref())
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")
+	cmd.Flags().BoolVar(&full, "full", false, "include the whole manifest and the README")
 	return cmd
+}
+
+type briefInput struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Required    bool     `json:"required,omitempty"`
+	Default     any      `json:"default,omitempty"`
+	Choices     []string `json:"choices,omitempty"`
+	Arg         string   `json:"arg"`
+	Description string   `json:"description,omitempty"`
+}
+
+// briefInfo is the compact view agents read before running a tool.
+func (a *app) briefInfo(t *toolbox.Tool, direct []string, last *testlog.Record) map[string]any {
+	m := t.Manifest
+	inputs := []briefInput{}
+	for _, in := range m.Inputs {
+		bi := briefInput{Name: in.Name, Type: string(in.Type), Required: in.Required, Default: in.Default,
+			Arg: argSummary(in), Description: in.Description}
+		for _, o := range in.Options {
+			bi.Choices = append(bi.Choices, o.Value)
+		}
+		inputs = append(inputs, bi)
+	}
+	store, _ := a.secretStore()
+	missing := workspace.Missing(t, store, nil)
+	if missing == nil {
+		missing = []string{}
+	}
+	tested := map[string]any{"status": "never"}
+	if last != nil {
+		switch {
+		case last.Version != m.Version:
+			tested = map[string]any{"status": "older version only", "version": last.Version}
+		case last.OK:
+			tested = map[string]any{"status": "passed", "at": last.At, "cases": last.Cases}
+		default:
+			tested = map[string]any{"status": "failed", "at": last.At, "error": last.Error, "cases": last.Cases}
+		}
+	}
+	out := map[string]any{
+		"ref": t.Ref(), "name": m.Name, "version": m.Version, "description": m.Description,
+		"ready": len(missing) == 0, "missing": missing,
+		"inputs": inputs, "tested": tested, "examples": m.Examples,
+		"direct_command": strings.Join(quoteAll(direct), " "),
+		"next":           fmt.Sprintf("maggot prepare %s --inputs '{...}' --json", t.Ref()),
+	}
+	if m.Outputs != nil {
+		out["output"] = m.Outputs
+	}
+	if m.Warm != nil {
+		out["warm"] = true
+	}
+	return out
 }
 
 // directCommand is the argv prefix to run the tool without maggot.

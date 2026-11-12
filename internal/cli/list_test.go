@@ -75,7 +75,7 @@ func TestListAndInfo(t *testing.T) {
 		t.Fatalf("category filter: %s", out)
 	}
 
-	code, out, _ = run(t, "info", "hello", "--json")
+	code, out, _ = run(t, "info", "hello", "--json", "--full")
 	var info struct {
 		Ref           string
 		DirectCommand []string `json:"direct_command"`
@@ -85,6 +85,22 @@ func TestListAndInfo(t *testing.T) {
 	}
 	if len(info.DirectCommand) != 1 || !strings.HasSuffix(info.DirectCommand[0], filepath.Join("hello", "run")) {
 		t.Fatalf("direct command: %v", info.DirectCommand)
+	}
+
+	// The default JSON is the short agent view.
+	code, out, _ = run(t, "info", "hello", "--json")
+	var brief struct {
+		Ref     string
+		Ready   bool
+		Missing []string
+		Inputs  []briefInput
+		Tested  map[string]any
+		Next    string
+	}
+	if code != 0 || json.Unmarshal([]byte(out), &brief) != nil || !brief.Ready || len(brief.Inputs) != 2 ||
+		brief.Inputs[0].Arg != "<positional>" || brief.Inputs[1].Arg != "--shout" || brief.Tested["status"] != "never" ||
+		!strings.Contains(brief.Next, "maggot prepare personal/hello") || strings.Contains(out, "readme") {
+		t.Fatalf("brief: %s", out)
 	}
 
 	code, out, _ = run(t, "info", "hello")
