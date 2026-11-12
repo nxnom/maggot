@@ -36,8 +36,9 @@ func Words(s string) []string {
 	return out
 }
 
-// wordMatch is true for equal words, or when one is a prefix of the other and
-// the shorter has 3+ letters ("remove" ~ "remover", "img" ~ "image" is not).
+// wordMatch is true for equal words, or when one is a prefix of the other,
+// the shorter has 3+ letters and covers most of the longer ("remove" ~
+// "remover", "pdf" ~ "pdfs"; "don" is not "donwload").
 func wordMatch(q, w string) bool {
 	if q == w {
 		return true
@@ -46,7 +47,7 @@ func wordMatch(q, w string) bool {
 	if len(short) > len(long) {
 		short, long = long, short
 	}
-	return len(short) >= 3 && strings.HasPrefix(long, short)
+	return len(short) >= 3 && len(short)*10 >= len(long)*6 && strings.HasPrefix(long, short)
 }
 
 type field struct {

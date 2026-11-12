@@ -63,6 +63,8 @@ func TestWordMatch(t *testing.T) {
 		{"pdfs", "pdf", true},
 		{"im", "image", false},
 		{"video", "audio", false},
+		{"don", "donwload", false},
+		{"thumbnail", "thumbnails", true},
 	} {
 		if wordMatch(c.q, c.w) != c.want {
 			t.Errorf("wordMatch(%q,%q)", c.q, c.w)
