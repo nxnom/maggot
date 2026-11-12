@@ -33,6 +33,8 @@ type draftInfo struct {
 	Version     string `json:"version,omitempty"`
 	Description string `json:"description,omitempty"`
 	Error       string `json:"error,omitempty"`
+	// Of is the installed tool this draft is a new version of (same id).
+	Of *toolLink `json:"of,omitempty"`
 
 	tool *toolbox.Tool
 }

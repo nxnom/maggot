@@ -39,6 +39,8 @@ type toolSummary struct {
 	Tested  string   `json:"tested"`            // passed, failed, old, never
 	Missing []string `json:"missing,omitempty"` // binaries/env needed before it can run
 	Warm    bool     `json:"warm,omitempty"`    // can stay in memory
+	// Draft is a draft with the same id: a new version being worked on.
+	Draft *toolLink `json:"draft,omitempty"`
 }
 
 func summary(t *toolbox.Tool) toolSummary {
@@ -80,6 +82,11 @@ func (s *Server) apiState(w http.ResponseWriter, r *http.Request) error {
 	counts := map[string]int{}
 	rows := []toolSummary{}
 	tested, _ := testlog.Load()
+	drafts := s.drafts()
+	if drafts == nil {
+		drafts = []draftInfo{}
+	}
+	linkDrafts(drafts, tools, ws.Config.Default)
 	for _, t := range tools {
 		counts[t.Toolbox.Handle]++
 		row := summary(t)
@@ -89,6 +96,9 @@ func (s *Server) apiState(w http.ResponseWriter, r *http.Request) error {
 		}
 		row.Tested = testedLabel(rec, t.Manifest.Version)
 		row.Missing = workspace.Missing(t, s.store, s.checker.LookPath)
+		if d := draftFor(t.Manifest.ID, drafts); d != nil {
+			row.Draft = linkToDraft(*d)
+		}
 		rows = append(rows, row)
 	}
 	warmNow := warm.List()
@@ -103,10 +113,6 @@ func (s *Server) apiState(w http.ResponseWriter, r *http.Request) error {
 		boxes = append(boxes, tbRow{Name: p.Toolbox, Path: p.Path, Default: p.Toolbox == ws.Config.Default, Error: p.Error})
 	}
 	home, _ := os.UserHomeDir()
-	drafts := s.drafts()
-	if drafts == nil {
-		drafts = []draftInfo{}
-	}
 	draftsDir, _ := config.DraftsDir()
 	return ok(w, map[string]any{
 		"version": s.Version, "config_path": ws.Config.Path(), "data_dir": s.data, "home": home,
@@ -299,15 +305,23 @@ func (s *Server) resolve(r *http.Request, ref string) (*workspace.Workspace, *to
 }
 
 func (s *Server) apiTool(w http.ResponseWriter, r *http.Request) error {
-	_, t, err := s.resolve(r, "")
+	ws, t, err := s.resolve(r, "")
 	if err != nil {
 		return err
 	}
 	readme, _ := os.ReadFile(filepath.Join(t.Dir, "README.md"))
 	argv, _ := runner.Argv(t.Dir, t.Manifest, nil)
-	var draft map[string]string
+	// A draft links to the installed tool it changes, and back.
+	tools, _ := ws.Set.Tools()
+	var draft map[string]any
+	var draftOf *toolLink
 	if isDraftRef(t.Ref()) {
-		draft = map[string]string{"kind": t.Toolbox.Handle, "path": t.Dir}
+		draft = map[string]any{"kind": t.Toolbox.Handle, "path": t.Dir}
+		if it := installedFor(t.Manifest.ID, tools, ws.Config.Default); it != nil {
+			draft["of"] = linkTo(it)
+		}
+	} else if d := draftFor(t.Manifest.ID, s.drafts()); d != nil {
+		draftOf = linkToDraft(*d)
 	}
 	var last *testlog.Record
 	if all, _ := testlog.Load(); all != nil && draft == nil {
@@ -318,7 +332,7 @@ func (s *Server) apiTool(w http.ResponseWriter, r *http.Request) error {
 	return ok(w, map[string]any{
 		"ref": t.Ref(), "toolbox": t.Toolbox.Handle, "dir": t.Dir, "manifest": t.Manifest,
 		"readme": string(readme), "direct": shellJoin(argv), "env": workspace.Env(s.store, t),
-		"last_test": last, "draft": draft, "warm": warmInfo(t.Manifest.ID, t.Manifest.Warm != nil),
+		"last_test": last, "draft": draft, "has_draft": draftOf, "warm": warmInfo(t.Manifest.ID, t.Manifest.Warm != nil),
 	})
 }
 

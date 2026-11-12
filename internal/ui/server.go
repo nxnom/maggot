@@ -187,6 +187,8 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/tool/warm", s.apiWarmStart)
 	api("DELETE /api/tool/warm", s.apiWarmStop)
 	api("DELETE /api/drafts", s.apiRemoveDraft)
+	api("GET /api/tool/changes", s.apiChanges)
+	api("GET /api/tool/diff", s.apiDiff)
 
 	return s.checkHost(mux)
 }

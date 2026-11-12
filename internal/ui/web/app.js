@@ -79,7 +79,8 @@ function renderSide() {
     const showBox = boxes.length > 1 && !filter.toolbox;
     return h("li", null, h("a", {
       class: "tool-link", href: "#/tool/" + encodeURIComponent(t.ref), "aria-current": current === t.ref ? "page" : null,
-    }, h("span", { class: "name" }, t.name), h("span", { class: "desc" }, showBox ? `${t.toolbox}: ${t.description}` : t.description)));
+    }, h("span", { class: "name" }, t.name, t.draft ? h("span", { class: "draft-flag", title: `Draft v${t.draft.version} in progress` }, "draft") : null),
+    h("span", { class: "desc" }, showBox ? `${t.toolbox}: ${t.description}` : t.description)));
   }
   renderList();
 
@@ -88,7 +89,7 @@ function renderSide() {
     state.drafts.map((d) => h("li", null, h("a", {
       class: "tool-link" + (d.error ? " broken" : ""), href: "#/tool/" + encodeURIComponent(d.ref),
       "aria-current": current === d.ref ? "page" : null, title: d.path,
-    }, h("span", { class: "name" }, d.name || d.id), h("span", { class: "desc" }, d.error ? "Invalid tool.json" : d.kind === "draft" ? d.description : d.path))))) : null;
+    }, h("span", { class: "name" }, d.name || d.id), h("span", { class: "desc" }, draftLine(d)))))) : null;
 
   clear(side,
     h("a", { class: "wordmark", href: "#/" }, "maggot", h("small", null, state.version)),
@@ -145,6 +146,7 @@ async function homePage() {
         old: h("span", { class: "req wait" }, "Older version tested"), never: h("span", { class: "req wait" }, "Not tested") }[t.tested],
       (t.missing || []).length ? h("span", { class: "req bad" }, "Needs " + t.missing.map((x) => x.replace(/^(binary|env) /, "")).join(", ")) : null,
       state.warm.some((w) => w.ref === t.ref && w.running) ? h("span", { class: "req warm-on" }, "In memory") : null,
+      t.draft ? h("span", { class: "req draft-chip" }, `Draft v${t.draft.version}`) : null,
       state.toolboxes.length > 1 ? h("span", { class: "muted" }, t.toolbox) : null));
   function showAll() {
     if (!state.tools.length) {
@@ -204,9 +206,9 @@ async function homePage() {
   if (state.drafts.length) {
     sections.push(h("section", { class: "home-panel" }, h("h2", null, "Drafts to try"),
       h("ul", { class: "home-list" }, state.drafts.map((d) => h("li", null,
-        h("a", { href: "#/tool/" + encodeURIComponent(d.ref) }, d.name || d.id),
-        h("span", { class: d.error ? "muted bad-text" : "muted" }, d.error ? "invalid tool.json" : "v" + d.version),
-        d.error ? null : h("button", { class: "btn small", type: "button", onclick: () => stageImport(d.path, d) }, "Import…"))))));
+        h("span", { class: "home-draft" }, h("a", { href: "#/tool/" + encodeURIComponent(d.ref) }, d.name || d.id),
+          h("span", { class: d.error ? "muted bad-text" : "muted" }, draftLine(d))),
+        d.error ? null : h("button", { class: "btn small", type: "button", onclick: () => stageImport(d.path, d) }, d.of ? "Update…" : "Import…"))))));
   }
   const recent = h("ul", { class: "home-list" }, h("li", { class: "muted" }, "Loading…"));
   sections.push(h("section", { class: "home-panel" }, h("h2", null, "Recent runs"), recent));
@@ -409,7 +411,13 @@ async function toolPage(spec) {
         h("a", { class: "btn", href: `/api/export?ref=${q(tool.ref)}` }, "Export"),
         deleteTool)),
     h("div", { class: "tp-desc-row" }, desc, more),
-    draft ? draftNote(draft, m) : null);
+    draft ? draftNote(draft, m, () => select("changes")) : null,
+    tool.has_draft ? h("div", { class: "draft-note linked" },
+      h("p", null, `You are working on a new version of this tool: draft v${tool.has_draft.version} (this one is v${m.version}). `,
+        "Importing the draft replaces this tool."),
+      h("div", { class: "row" },
+        h("a", { class: "btn", href: "#/tool/" + encodeURIComponent(tool.has_draft.ref) }, "Open draft"),
+        h("a", { class: "btn quiet", href: "#/tool/" + encodeURIComponent(tool.has_draft.ref) + "?tab=changes" }, "See changes"))) : null);
   // Show "More" only when the description does not fit on one line.
   requestAnimationFrame(() => { more.hidden = desc.scrollWidth <= desc.clientWidth + 1; });
 
@@ -590,14 +598,17 @@ async function toolPage(spec) {
   const countBadge = h("span", { class: "tab-count" });
   const tabDefs = [
     ["run", "Run"], ["history", ["History", countBadge]], ["code", "Code"], ["docs", "Docs"],
+    draft && draft.of ? ["changes", "Changes"] : null,
     hasSecrets ? ["settings", "Settings"] : null,
   ].filter(Boolean);
+  const changes = h("div", { class: "tp-split tp-split-list" });
   const panels = {
     run: h("div", { class: "tp-split" }, formEl, h("div", { class: "tp-result" }, runView.el)),
     history: h("div", { class: "tp-split tp-split-list" },
       h("div", { class: "tp-list" }, h("div", { class: "tp-list-head" }, h("h2", null, "Runs"), deleteAll), historyList),
       h("div", { class: "tp-result" }, historyView.el)),
     code: files,
+    changes,
     docs,
     settings: secrets,
   };
@@ -642,6 +653,7 @@ async function toolPage(spec) {
       panelEls[tid].hidden = !on;
     }
     if (id === "code" && !loaded.code) { loaded.code = true; loadFiles(tool, files, params.get("file")); }
+    if (id === "changes" && !loaded.changes) { loaded.changes = true; loadChanges(tool, changes, params.get("file")); }
     if (id === "settings" && !loaded.settings) { loaded.settings = true; renderSecrets(tool, secrets); }
     setURL(id === "history" && historyActive ? { run: historyActive } : null);
   }
@@ -899,7 +911,21 @@ async function loadFiles(tool, el, startPath) {
   }
 }
 
-function draftNote(draft, m) {
+// draftLine is the one-line summary of a draft in lists.
+function draftLine(d) {
+  if (d.error) return "Invalid tool.json";
+  if (d.of) return `New version of ${d.of.name}: v${d.of.version} → v${d.version}`;
+  return d.kind === "draft" ? "New tool · v" + d.version : d.path;
+}
+
+// newer compares two semver strings (pre-release tags ignored).
+function newer(a, b) {
+  const pa = a.split(/[-+]/)[0].split(".").map(Number), pb = b.split(/[-+]/)[0].split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  return false;
+}
+
+function draftNote(draft, m, showChanges) {
   const isDraftsFolder = draft.kind === "draft";
   const remove = h("button", { class: "btn small quiet danger", type: "button" }, isDraftsFolder ? "Delete draft" : "Stop trying");
   remove.addEventListener("click", async () => {
@@ -907,11 +933,73 @@ function draftNote(draft, m) {
       h("div", null, h("p", null, "This deletes the draft folder:"), h("p", null, h("code", null, draft.path))), "Delete draft", true))) return;
     try { await del(`/api/drafts?ref=${q(draft.ref)}`); await loadState(); location.hash = "#/"; } catch (e) { toast(e.message, true); }
   });
-  return h("div", { class: "draft-note" },
-    h("p", null, "Not in your toolbox yet. Try it here, then import it.", h("br"), h("code", null, draft.path)),
+  const of = draft.of;
+  if (!of) {
+    return h("div", { class: "draft-note" },
+      h("p", null, "New tool, not in your toolbox yet. Try it here, then import it.", h("br"), h("code", null, draft.path)),
+      h("div", { class: "row" },
+        h("button", { class: "btn green", type: "button", onclick: () => stageImport(draft.path, draft) }, "Import…"),
+        remove));
+  }
+  const bump = newer(m.version, of.version) ? null
+    : h("p", { class: "bad-text" }, `The version is not higher than the installed v${of.version}. Bump "version" in tool.json so the change is clear.`);
+  return h("div", { class: "draft-note linked" },
+    h("p", null, "New version of ", h("a", { href: "#/tool/" + encodeURIComponent(of.ref) }, of.name),
+      ` in ${of.toolbox}: installed v${of.version} → this draft v${m.version}. Importing replaces the installed tool.`,
+      h("br"), h("code", null, draft.path)),
+    bump,
     h("div", { class: "row" },
-      h("button", { class: "btn green", type: "button", onclick: () => stageImport(draft.path, draft) }, "Import…"),
+      h("button", { class: "btn green", type: "button", onclick: () => stageImport(draft.path, draft) }, `Update ${of.name}…`),
+      h("button", { class: "btn", type: "button", onclick: showChanges }, "See changes"),
       remove));
+}
+
+// loadChanges shows what a draft changed compared with the installed tool:
+// the changed files on the left, a line diff of the picked file on the right.
+async function loadChanges(tool, el, wanted) {
+  clear(el, h("p", { class: "muted", style: "padding:16px" }, "Comparing…"));
+  let res;
+  try { res = await get(`/api/tool/changes?ref=${q(tool.ref)}`); } catch (e) { return clear(el, h("p", { class: "notice" }, e.message)); }
+  if (!res.files.length) {
+    return clear(el, h("div", { class: "home-empty", style: "margin:16px" }, h("h2", null, "No changes yet"),
+      h("p", null, `This draft has the same files as the installed ${res.of.name} v${res.of.version}.`)));
+  }
+  const view = h("div", { class: "tp-result diff-view" });
+  const buttons = new Map();
+  const label = { added: "A", changed: "M", removed: "D" };
+  async function show(f) {
+    for (const [p, b] of buttons) b.setAttribute("aria-current", String(p === f.path));
+    history.replaceState(null, "", "#/tool/" + encodeURIComponent(tool.ref) + "?tab=changes&file=" + encodeURIComponent(f.path));
+    clear(view, h("p", { class: "muted" }, "Loading…"));
+    let d;
+    try { d = await get(`/api/tool/diff?ref=${q(tool.ref)}&path=${q(f.path)}`); } catch (e) { return clear(view, h("p", { class: "notice" }, e.message)); }
+    const head = h("div", { class: "diff-head" }, h("span", { class: "diff-status " + f.status }, f.status), h("code", null, f.path));
+    if (d.binary) return clear(view, head, h("p", { class: "muted" }, `Binary file: ${bytes(d.old_size)} → ${bytes(d.new_size)}.`));
+    if (d.too_large) return clear(view, head, h("p", { class: "muted" }, "This file is too large to compare here."));
+    const lang = language(f.path, "");
+    clear(view, head, h("div", { class: "diff", role: "table", "aria-label": "Changes in " + f.path }, d.lines.map((l) => {
+      if (l.op === "~") return h("div", { class: "diff-skip" }, `${l.skip} unchanged line${l.skip === 1 ? "" : "s"}`);
+      const cls = l.op === "+" ? "add" : l.op === "-" ? "del" : "same";
+      return h("div", { class: "diff-row " + cls },
+        h("span", { class: "diff-n" }, l.old ? String(l.old) : ""), h("span", { class: "diff-n" }, l.new ? String(l.new) : ""),
+        h("span", { class: "diff-op", "aria-hidden": "true" }, l.op === " " ? "" : l.op),
+        h("span", { class: "diff-text" }, highlightLines(l.text || "", lang)[0]));
+    })));
+  }
+  const list = h("ul", { class: "diff-files" }, res.files.map((f) => {
+    const b = h("button", { class: "pick", type: "button", onclick: () => show(f) },
+      h("span", { class: "diff-status " + f.status, title: f.status }, label[f.status]), h("span", { class: "diff-path" }, f.path));
+    buttons.set(f.path, b);
+    return h("li", null, b);
+  }));
+  const counts = ["changed", "added", "removed"].map((s) => [s, res.files.filter((f) => f.status === s).length]).filter(([, n]) => n);
+  clear(el,
+    h("div", { class: "tp-list" },
+      h("div", { class: "tp-list-head" }, h("h2", null, `Changes from v${res.of.version}`)),
+      h("p", { class: "muted diff-sum" }, counts.map(([s, n]) => `${n} ${s}`).join(", ")),
+      list),
+    view);
+  show(res.files.find((f) => f.path === wanted) || res.files.find((f) => f.status === "changed") || res.files[0]);
 }
 
 async function checkHealth(tool, el) {

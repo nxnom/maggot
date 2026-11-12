@@ -64,7 +64,10 @@ apply only with `--inputs` (entry.args are always added).
 If a tool almost fits, improve it instead of writing a second similar tool.
 Propose the change first and wait for approval (step 1 below). Then
 `maggot draft <tool>` copies it into the drafts folder; change the copy, bump
-`version`, and continue with steps 4–6 below.
+`version`, and continue with steps 4–6 below. Keep the same `id`: that is
+how maggot connects the draft to the installed tool. In the web UI the user
+then sees "New version of <tool>" and a Changes tab with a diff against the
+installed version; point them to it when you hand over.
 
 ## Create a tool
 
