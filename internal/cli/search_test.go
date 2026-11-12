@@ -30,4 +30,10 @@ func TestSearchCommand(t *testing.T) {
 	if _, out, _ := run(t, "search", "spreadsheet"); !strings.Contains(out, "no matching tools") {
 		t.Fatalf("no match: %s", out)
 	}
+	if _, out, _ := run(t, "search", "backgrnd removr"); !strings.Contains(out, "closest (not a direct match):") || !strings.Contains(out, "p/bg-remover") {
+		t.Fatalf("closest: %s", out)
+	}
+	if _, out, _ := run(t, "search", "remove", "background"); !strings.Contains(out, "MATCHED") || !strings.Contains(out, "remove,background") {
+		t.Fatalf("matched column: %s", out)
+	}
 }

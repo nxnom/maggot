@@ -28,6 +28,15 @@ func (a *app) searchCmd() *cobra.Command {
 			if limit > 0 && len(hits) > limit {
 				hits = hits[:limit]
 			}
+			query := strings.Join(args, " ")
+			// No word matched: show the most similar tools anyway (typos,
+			// other word forms), clearly marked as not a direct match.
+			var closest []toolSummary
+			if len(hits) == 0 {
+				for _, t := range search.Closest(tools, query, 3) {
+					closest = append(closest, summarize(t))
+				}
+			}
 			if asJSON {
 				type row struct {
 					toolSummary
@@ -38,17 +47,30 @@ func (a *app) searchCmd() *cobra.Command {
 				for _, h := range hits {
 					rows = append(rows, row{summarize(h.Tool), h.Score, h.Matched})
 				}
-				return writeJSON(a.stdout, map[string]any{"query": strings.Join(args, " "), "results": rows})
+				out := map[string]any{"query": query, "results": rows}
+				if len(hits) == 0 {
+					if closest == nil {
+						closest = []toolSummary{}
+					}
+					out["closest"] = closest
+					out["hint"] = "no tool matched the words; check the closest tools, try other words (what the tool does, file formats), or build a new tool"
+				}
+				return writeJSON(a.stdout, out)
 			}
 			if len(hits) == 0 {
 				fmt.Fprintln(a.stdout, "no matching tools")
+				if len(closest) > 0 {
+					fmt.Fprintln(a.stdout, "closest (not a direct match):")
+					for _, c := range closest {
+						fmt.Fprintf(a.stdout, "  %s  %s\n", c.Ref, c.Description)
+					}
+				}
 				return nil
 			}
 			w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "TOOL\tVERSION\tDESCRIPTION")
+			fmt.Fprintln(w, "TOOL\tMATCHED\tDESCRIPTION")
 			for _, h := range hits {
-				m := h.Tool.Manifest
-				fmt.Fprintf(w, "%s\t%s\t%s\n", h.Tool.Ref(), m.Version, m.Description)
+				fmt.Fprintf(w, "%s\t%s\t%s\n", h.Tool.Ref(), strings.Join(h.Matched, ","), h.Tool.Manifest.Description)
 			}
 			return w.Flush()
 		},

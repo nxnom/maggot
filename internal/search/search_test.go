@@ -69,3 +69,20 @@ func TestWordMatch(t *testing.T) {
 		}
 	}
 }
+
+func TestClosest(t *testing.T) {
+	tools := []*toolbox.Tool{
+		tool("youtube-download", "YouTube Download", "Download video or audio.", "yt-dlp"),
+		tool("pdf-merge", "PDF Merge", "Merge PDF files into one."),
+	}
+	if hits := Rank(tools, "yotube donwload"); len(hits) != 0 {
+		t.Fatalf("typos should not match words: %v", refs(hits))
+	}
+	got := Closest(tools, "yotube donwload", 3)
+	if len(got) == 0 || got[0].Manifest.ID != "youtube-download" {
+		t.Fatalf("closest: %v", got)
+	}
+	if got := Closest(tools, "zzzz qqqq", 3); len(got) != 0 {
+		t.Fatalf("nothing similar: %v", got)
+	}
+}

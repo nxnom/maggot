@@ -116,3 +116,52 @@ func Rank(tools []*toolbox.Tool, query string) []Hit {
 	})
 	return hits
 }
+
+// trigrams returns the set of 3-letter pieces of the words in s.
+func trigrams(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range Words(s) {
+		w = " " + w + " "
+		for i := 0; i+3 <= len(w); i++ {
+			out[w[i:i+3]] = true
+		}
+	}
+	return out
+}
+
+// Closest ranks tools by letter similarity to the query, for when Rank finds
+// nothing (typos, other word forms). It returns at most n tools with some
+// similarity.
+func Closest(tools []*toolbox.Tool, query string, n int) []*toolbox.Tool {
+	q := trigrams(query)
+	if len(q) == 0 {
+		return nil
+	}
+	type scored struct {
+		t     *toolbox.Tool
+		score float64
+	}
+	var all []scored
+	for _, t := range tools {
+		m := t.Manifest
+		doc := trigrams(strings.Join(append([]string{m.ID, m.Name, m.Description}, append(m.Tags, m.Categories...)...), " "))
+		common := 0
+		for g := range q {
+			if doc[g] {
+				common++
+			}
+		}
+		if common > 0 {
+			all = append(all, scored{t, float64(common) / float64(len(q))})
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].score > all[j].score })
+	var out []*toolbox.Tool
+	for _, s := range all {
+		if s.score < 0.2 || len(out) == n {
+			break
+		}
+		out = append(out, s.t)
+	}
+	return out
+}
