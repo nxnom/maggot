@@ -18,6 +18,7 @@ import (
 
 	"github.com/nxnom/maggot/internal/doctor"
 	"github.com/nxnom/maggot/internal/pack"
+	"github.com/nxnom/maggot/internal/presets"
 	"github.com/nxnom/maggot/internal/scaffold"
 	"github.com/nxnom/maggot/internal/secrets"
 	"github.com/nxnom/maggot/internal/toolbox"
@@ -662,5 +663,29 @@ func TestRunKeepsToolWarm(t *testing.T) {
 	}
 	if st, _ := warm.Get("keepme"); st != nil {
 		t.Fatalf("should stay cold: %+v", st)
+	}
+}
+
+func TestPresetsOverHTTP(t *testing.T) {
+	ts := newTestServer(t)
+	var res struct {
+		Use      string
+		Warnings []string
+		Presets  []presets.Preset
+	}
+	ts.do(t, "POST", "/api/tool/presets", map[string]any{"ref": "worker", "label": "Ann (loud)", "scope": "toolbox",
+		"values": map[string]any{"name": "ann", "bogus": 1}}, 200, &res)
+	if res.Use != "toolbox/ann-loud" || len(res.Presets) != 1 || res.Presets[0].Values["bogus"] != nil {
+		t.Fatalf("save: %+v", res)
+	}
+	ts.do(t, "POST", "/api/tool/presets", map[string]any{"ref": "worker", "label": "  ", "scope": "personal"}, 400, nil)
+	ts.do(t, "POST", "/api/tool/presets", map[string]any{"ref": "worker", "label": "x", "scope": "elsewhere"}, 400, nil)
+	ts.do(t, "GET", "/api/tool/presets?ref=worker", nil, 200, &res)
+	if len(res.Presets) != 1 || res.Presets[0].Label != "Ann (loud)" {
+		t.Fatalf("list: %+v", res)
+	}
+	ts.do(t, "DELETE", "/api/tool/presets?ref=worker&preset=toolbox/ann-loud", nil, 200, &res)
+	if len(res.Presets) != 0 {
+		t.Fatalf("delete: %+v", res)
 	}
 }

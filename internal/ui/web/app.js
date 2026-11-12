@@ -402,7 +402,10 @@ async function toolPage(spec) {
     ? h("div", { class: "fieldset tp-options" }, h("h3", { class: "group-title" }, "Options"), outControl, warmBox ? h("div", { class: "field" }, warmBox) : null)
     : null;
   if (options) form.el.append(options);
+  const presetBar = (m.inputs || []).length ? h("div", { class: "preset-bar" }) : null;
+  if (presetBar) presetControls(tool, form, presetBar);
   const formEl = h("form", { class: "form tp-form", novalidate: true, "aria-label": "Inputs" },
+    presetBar,
     form.el,
     h("div", { class: "tp-dock" },
       cmd,
@@ -613,6 +616,90 @@ function renderWarm(tool, el, info) {
     h("label", { class: "check warm-check" }, box, h("span", null, "Keep in memory between runs for")),
     mins, h("span", null, "min"),
     status);
+}
+
+// presetControls: pick a saved preset to fill the form, save the current
+// values as a preset (only for me, or in the toolbox), update or delete one.
+async function presetControls(tool, form, el) {
+  let list = [];
+  let selected = "";
+  const select = h("select", { class: "select", "aria-label": "Preset" });
+  const update = h("button", { class: "btn small quiet", type: "button", disabled: true }, "Update");
+  const remove = h("button", { class: "btn small quiet danger", type: "button", disabled: true }, "Delete");
+  const saveAs = h("button", { class: "btn small", type: "button" }, "Save as…");
+  const current = () => list.find((p) => p.scope + "/" + p.name === selected);
+  function render() {
+    const opt = (p) => h("option", { value: p.scope + "/" + p.name, selected: p.scope + "/" + p.name === selected, title: p.description || null }, p.label || p.name);
+    const mine = list.filter((p) => p.scope === "personal");
+    const shared = list.filter((p) => p.scope === "toolbox");
+    clear(select,
+      h("option", { value: "" }, list.length ? "Choose a preset…" : "No presets yet"),
+      mine.length ? h("optgroup", { label: "Mine" }, mine.map(opt)) : null,
+      shared.length ? h("optgroup", { label: "Toolbox (shared)" }, shared.map(opt)) : null);
+    update.disabled = remove.disabled = !current();
+  }
+  async function load() {
+    try { list = (await get(`/api/tool/presets?ref=${q(tool.ref)}`)).presets; } catch { list = []; }
+    render();
+  }
+  select.addEventListener("change", () => {
+    selected = select.value;
+    const p = current();
+    if (p) { form.set(p.values); toast(`Filled from "${p.label || p.name}".`); }
+    update.disabled = remove.disabled = !p;
+  });
+  const save = async (label, description, scope) => {
+    const res = await post("/api/tool/presets", { ref: tool.ref, label, description, scope, values: form.values() });
+    list = res.presets;
+    selected = res.use;
+    render();
+    toast(`Saved "${label}".`);
+    for (const w of res.warnings) toast(w, true);
+  };
+  update.addEventListener("click", async () => {
+    const p = current();
+    if (!p) return;
+    try { await save(p.label || p.name, p.description || "", p.scope); } catch (e) { toast(e.message, true); }
+  });
+  remove.addEventListener("click", async () => {
+    const p = current();
+    if (!p || !(await confirmDialog(`Delete preset "${p.label || p.name}"?`, p.scope === "toolbox"
+      ? "It is saved in the toolbox, so it is removed for everyone who uses this toolbox." : "It is removed from this computer.", "Delete", true))) return;
+    try {
+      list = (await del(`/api/tool/presets?ref=${q(tool.ref)}&preset=${q(p.scope + "/" + p.name)}`)).presets;
+      selected = "";
+      render();
+    } catch (e) { toast(e.message, true); }
+  });
+  saveAs.addEventListener("click", () => {
+    const name = h("input", { class: "input", placeholder: "e.g. Narrator, calm and deep", "aria-label": "Preset name" });
+    const desc = h("input", { class: "input", placeholder: "Optional: what it is for", "aria-label": "Description" });
+    const scope = (value, label, help, checked) => h("label", { class: "check", style: "margin-bottom:8px" },
+      h("input", { type: "radio", name: "preset-scope", value, checked }),
+      h("span", null, h("span", { class: "label" }, label), h("br"), h("span", { class: "muted", style: "font-size:13px" }, help)));
+    const body = h("div", null,
+      h("div", { class: "field" }, h("div", { class: "label" }, "Name"), name),
+      h("div", { class: "field" }, h("div", { class: "label" }, "Description"), desc),
+      h("div", { class: "field" }, h("div", { class: "label" }, "Save for"),
+        scope("personal", "Only me", "Kept on this computer, not in the toolbox.", true),
+        scope("toolbox", "In the toolbox", "Saved in the tool folder: shared through git, exports and imports.", false)),
+      h("p", { class: "muted", style: "font-size:13px;margin:0" }, "The preset keeps the values currently in the form."));
+    openDialog({
+      title: "Save preset",
+      body,
+      actions: [
+        { label: "Cancel", class: "quiet" },
+        { label: "Save preset", class: "green", onClick: async () => {
+          if (!name.value.trim()) { toast("Give the preset a name.", true); return false; }
+          try { await save(name.value.trim(), desc.value.trim(), body.querySelector("input[name=preset-scope]:checked").value); }
+          catch (e) { toast(e.message, true); return false; }
+        } },
+      ],
+    });
+    name.focus();
+  });
+  clear(el, h("span", { class: "preset-label" }, "Preset"), select, saveAs, update, remove);
+  load();
 }
 
 async function openTool(tool) {
