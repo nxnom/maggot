@@ -41,6 +41,10 @@ type Server struct {
 	// Selector limits the UI to one toolbox (same as --toolbox).
 	Selector string
 	Token    string
+	// Worker is the command that runs a UI run in the background, so runs
+	// keep going when the UI stops (`maggot ui-run`; the spec path is
+	// added). Nil runs tools inside the UI process.
+	Worker []string
 
 	runs    *Manager
 	data    string

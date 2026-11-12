@@ -59,7 +59,11 @@ type RunMeta struct {
 	// External means the tool wrote into a folder the user chose (OutDir),
 	// not into the run folder. Those files belong to the user: deleting the
 	// run never deletes them.
-	External bool       `json:"external,omitempty"`
+	External bool `json:"external,omitempty"`
+	// Detached runs are owned by a background maggot process (PID), not by
+	// the UI, so they keep going when the UI stops. Cancel writes a cancel
+	// file in the run folder that the process watches.
+	Detached bool       `json:"detached,omitempty"`
 	ExitCode *int       `json:"exit_code,omitempty"`
 	Error    string     `json:"error,omitempty"`
 	Started  time.Time  `json:"started"`
@@ -205,6 +209,11 @@ type StartOptions struct {
 	OutDir string
 	Review bool
 	Origin string
+	// ID is the run id to use; empty means a new one.
+	ID string
+	// Detached marks a run that a background maggot process owns, so it
+	// keeps going when the UI stops (see worker.go).
+	Detached bool
 	// Before runs before the tool starts, while the run already shows as
 	// running (for example: wait for a warm process to finish loading). log
 	// adds a line to the run's output; stop is closed when the run is cancelled.
@@ -215,7 +224,12 @@ type StartOptions struct {
 // <run>/out through outputs.dir_flag.
 func (m *Manager) StartWith(t *toolbox.Tool, o StartOptions) (*Run, error) {
 	man := t.Manifest
-	id := newRunID()
+	id := o.ID
+	if id == "" {
+		id = newRunID()
+	} else if !runIDPattern.MatchString(id) {
+		return nil, fmt.Errorf("bad run id %q", id)
+	}
 	dir := filepath.Join(m.Root, id)
 	out := filepath.Join(dir, "out")
 	external := false
@@ -273,6 +287,7 @@ func (m *Manager) StartWith(t *toolbox.Tool, o StartOptions) (*Run, error) {
 			ID: id, Ref: t.Ref(), ToolID: man.ID, ToolName: man.Name, ToolVersion: man.Version,
 			Values: values, Argv: cmd.Args, Dir: dir, OutDir: out, Status: StatusRunning,
 			Started: time.Now(), Progress: -1, Review: o.Review, Origin: o.Origin, PID: os.Getpid(), External: external,
+			Detached: o.Detached,
 		},
 		subs: map[chan Message]struct{}{},
 		cmd:  cmd,
@@ -753,11 +768,26 @@ func (m *Manager) WriteLogText(id string, w io.Writer) error {
 	return bw.Flush()
 }
 
-// Cancel stops a running run.
+// cancelFile is created in a detached run's folder to ask its process to
+// stop the run.
+const cancelFile = "cancel"
+
+// Cancel stops a running run: one in this process, or a detached one that a
+// background maggot process owns.
 func (m *Manager) Cancel(id string) error {
 	r, ok := m.Active(id)
 	if !ok {
-		return errors.New("run is not active")
+		meta, err := m.Get(id)
+		if err != nil {
+			return err
+		}
+		if meta.Status != StatusRunning {
+			return errors.New("run is not active")
+		}
+		if !meta.Detached {
+			return errors.New("this run belongs to another maggot command; stop it there")
+		}
+		return os.WriteFile(filepath.Join(meta.Dir, cancelFile), nil, 0o644)
 	}
 	r.mu.Lock()
 	r.cancel = true
@@ -767,7 +797,8 @@ func (m *Manager) Cancel(id string) error {
 	return nil
 }
 
-// StopAll cancels every active run and waits for them (used on shutdown,
+// StopAll cancels every run this process owns and waits for them (used on
+// shutdown; UI runs are detached and not affected,
 // because runs live in their own process groups and do not get Ctrl-C).
 func (m *Manager) StopAll(timeout time.Duration) {
 	m.mu.Lock()
@@ -797,6 +828,9 @@ func (m *Manager) Delete(id string) error {
 	if !runIDPattern.MatchString(id) {
 		return fs.ErrNotExist
 	}
+	if meta, err := m.Get(id); err == nil && meta.Status == StatusRunning {
+		return errors.New("cancel the run before deleting it")
+	}
 	return os.RemoveAll(filepath.Join(m.Root, id))
 }
 
@@ -804,7 +838,7 @@ func (m *Manager) Delete(id string) error {
 func (m *Manager) DeleteAll(toolID string) int {
 	n := 0
 	for _, r := range m.List(toolID, 0) {
-		if _, running := m.Active(r.ID); running {
+		if _, running := m.Active(r.ID); running || r.Status == StatusRunning {
 			continue
 		}
 		if os.RemoveAll(filepath.Join(m.Root, r.ID)) == nil {

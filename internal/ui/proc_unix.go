@@ -34,3 +34,7 @@ func stopGroup(c *exec.Cmd, done <-chan struct{}) {
 		_ = syscall.Kill(pgid, syscall.SIGKILL)
 	}
 }
+
+// detach starts a process in its own session: no terminal, so closing the
+// terminal or Ctrl-C in it does not reach the process.
+func detach(c *exec.Cmd) { c.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }

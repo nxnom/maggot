@@ -28,7 +28,8 @@ func (a *app) uiCmd() *cobra.Command {
 computer can reach it, and only through the link printed here (it carries an
 access token). Runs are saved under the maggot data folder
 ($MAGGOT_DATA_DIR, $XDG_DATA_HOME/maggot or ~/.local/share/maggot).
-Press Ctrl-C to stop; active runs are cancelled.`,
+Press Ctrl-C to stop. Runs started in the UI keep going after it stops; open
+the UI again to see them.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.serveUI(port, noOpen, try)
@@ -38,6 +39,19 @@ Press Ctrl-C to stop; active runs are cancelled.`,
 	cmd.Flags().BoolVar(&noOpen, "no-open", false, "do not open the browser")
 	cmd.Flags().StringArrayVar(&try, "try", nil, "tool folder to try (repeatable); not saved")
 	return cmd
+}
+
+// uiRunCmd is the background process that owns one run started in the UI.
+func (a *app) uiRunCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "ui-run <spec>",
+		Short:  "Run one tool for the web UI (internal)",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return ui.RunWorker(args[0])
+		},
+	}
 }
 
 func (a *app) tryCmd() *cobra.Command {
@@ -87,6 +101,10 @@ func (a *app) serveUI(port int, noOpen bool, tryDirs []string) error {
 	srv, err := ui.New(Version, sel)
 	if err != nil {
 		return err
+	}
+	// Runs go to a background maggot process, so they outlive the UI.
+	if exe, err := os.Executable(); err == nil {
+		srv.Worker = []string{exe, "ui-run"}
 	}
 	focus := ""
 	for _, d := range tryDirs {

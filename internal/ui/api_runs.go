@@ -43,6 +43,7 @@ func (s *Server) apiStartRun(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	opts := StartOptions{Values: req.Values, OutDir: req.OutDir, Origin: "ui"}
+	waitWarm := false
 	if t.Manifest.Warm != nil {
 		id := t.Manifest.ID
 		st, _ := warm.Get(id)
@@ -56,6 +57,7 @@ func (s *Server) apiStartRun(w http.ResponseWriter, r *http.Request) error {
 		// While it loads, this run waits and then uses it, instead of
 		// loading a second copy.
 		if st != nil && !st.Running {
+			waitWarm = true
 			opts.Before = func(log func(string), stop <-chan struct{}) {
 				log("Loading into memory. Later runs skip this while the tool stays warm.")
 				if !warm.WaitLoaded(id, 15*time.Minute, stop, log) {
@@ -68,6 +70,13 @@ func (s *Server) apiStartRun(w http.ResponseWriter, r *http.Request) error {
 	opts.ExtraEnv = env
 	if req.OutDir != "" && !filepath.IsAbs(config.ExpandHome(req.OutDir)) {
 		return errors.New("choose an output folder (absolute path)")
+	}
+	if len(s.Worker) > 0 {
+		meta, err := s.startDetached(t, opts, waitWarm)
+		if err != nil {
+			return err
+		}
+		return ok(w, meta)
 	}
 	run, err := s.runs.StartWith(t, opts)
 	if err != nil {
