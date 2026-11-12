@@ -18,7 +18,7 @@ import (
 )
 
 func (a *app) runCmd() *cobra.Command {
-	var inputs, outDir, events string
+	var inputs, outDir, events, preset string
 	var skipChecks, dryRun, review, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "run <tool> [maggot flags] [-- tool args...]",
@@ -47,6 +47,14 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 			}
 			// Plain words before "--" (e.g. "maggot run hello world") also go to the tool.
 			toolArgs := args[1:]
+			if preset != "" {
+				if len(toolArgs) > 0 {
+					return errors.New("use either --preset/--inputs or raw tool args, not both")
+				}
+				if inputs, err = presetInputs(t, preset, inputs); err != nil {
+					return err
+				}
+			}
 			if asJSON && !dryRun {
 				return a.runJSON(cmd.Context(), t, inputs, toolArgs, outDir, review, skipChecks, events)
 			}
@@ -105,6 +113,7 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 	}
 	f := cmd.Flags()
 	f.StringVar(&inputs, "inputs", "", "input values as JSON, or @file.json")
+	f.StringVar(&preset, "preset", "", "start from a saved preset (see 'maggot presets'); --inputs override its values")
 	f.StringVar(&outDir, "out", "", "output dir, passed with the manifest's outputs.dir_flag (needs --inputs)")
 	f.StringVar(&events, "events", "", "file the tool may append NDJSON events to (sets MAGGOT_EVENTS)")
 	f.BoolVar(&skipChecks, "skip-checks", false, "do not check binaries and env before starting")

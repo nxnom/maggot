@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nxnom/maggot/internal/manifest"
+	"github.com/nxnom/maggot/internal/presets"
 	"github.com/nxnom/maggot/internal/runner"
 	"github.com/nxnom/maggot/internal/testlog"
 	"github.com/nxnom/maggot/internal/toolbox"
@@ -267,6 +268,19 @@ func (a *app) briefInfo(t *toolbox.Tool, direct []string, last *testlog.Record) 
 	}
 	if len(m.OneOf) > 0 {
 		out["one_of"] = m.OneOf // at least one input of each group is needed
+	}
+	if ps := presets.List(m.ID, t.Dir); len(ps) > 0 {
+		type briefPreset struct {
+			Use         string         `json:"use"` // value for --preset
+			Label       string         `json:"label,omitempty"`
+			Description string         `json:"description,omitempty"`
+			Values      map[string]any `json:"values"`
+		}
+		var list []briefPreset
+		for _, p := range ps {
+			list = append(list, briefPreset{p.Scope + "/" + p.Name, p.Label, p.Description, p.Values})
+		}
+		out["presets"] = list
 	}
 	if m.Warm != nil {
 		out["warm"] = true

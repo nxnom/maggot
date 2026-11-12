@@ -52,7 +52,7 @@ func newRootCmd(a *app) *cobra.Command {
 	root.SetOut(a.stdout)
 	root.SetErr(a.stderr)
 	root.PersistentFlags().StringVar(&a.toolboxFlag, "toolbox", "", "use only this toolbox (registered name or path); env: MAGGOT_TOOLBOX")
-	root.AddCommand(a.toolboxCmd(), a.listCmd(), a.searchCmd(), a.infoCmd(), a.runCmd(), a.doctorCmd(), a.secretCmd(), a.packCmd(), a.exportCmd(), a.importCmd(), a.removeCmd(), a.newCmd(), a.draftCmd(), a.testCmd(), a.guideCmd(), a.configCmd(), a.skillCmd(), a.uiCmd(), a.tryCmd(), a.cleanCmd(), a.takeCmd(), a.runsCmd(), a.openCmd(), a.warmCmd(), a.prepareCmd())
+	root.AddCommand(a.toolboxCmd(), a.listCmd(), a.searchCmd(), a.infoCmd(), a.runCmd(), a.doctorCmd(), a.secretCmd(), a.packCmd(), a.exportCmd(), a.importCmd(), a.removeCmd(), a.newCmd(), a.draftCmd(), a.testCmd(), a.guideCmd(), a.configCmd(), a.skillCmd(), a.uiCmd(), a.tryCmd(), a.cleanCmd(), a.takeCmd(), a.runsCmd(), a.openCmd(), a.warmCmd(), a.prepareCmd(), a.presetsCmd())
 	return root
 }
 

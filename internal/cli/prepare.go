@@ -10,6 +10,7 @@ import (
 
 	"github.com/nxnom/maggot/internal/doctor"
 	"github.com/nxnom/maggot/internal/manifest"
+	"github.com/nxnom/maggot/internal/presets"
 	"github.com/nxnom/maggot/internal/runner"
 	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/nxnom/maggot/internal/warm"
@@ -53,7 +54,7 @@ type prepareResult struct {
 }
 
 func (a *app) prepareCmd() *cobra.Command {
-	var inputs, outDir string
+	var inputs, outDir, preset string
 	var review, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "prepare <tool> [flags] [-- tool args...]",
@@ -74,16 +75,29 @@ goes, whether the tool is warm, the exact command it will run, and the
 			if err != nil {
 				return err
 			}
-			var values map[string]any
-			if inputs != "" {
+			var values, overrides map[string]any
+			if inputs != "" || preset != "" {
 				if len(args) > 1 {
-					return fmt.Errorf("use either --inputs or raw tool args, not both")
+					return fmt.Errorf("use either --preset/--inputs or raw tool args, not both")
 				}
-				if values, err = readInputs(inputs); err != nil {
-					return err
+				if inputs != "" {
+					if overrides, err = readInputs(inputs); err != nil {
+						return err
+					}
+				}
+				values = overrides
+				if preset != "" {
+					p, err := presets.Get(t.Manifest.ID, t.Dir, preset)
+					if err != nil {
+						return err
+					}
+					values = presets.Merge(p, overrides)
 				}
 			}
-			res := a.prepare(cmd.Context(), t, values, inputs != "", args[1:], outDir, review)
+			res := a.prepare(cmd.Context(), t, values, inputs != "" || preset != "", args[1:], outDir, review)
+			if preset != "" && res.Next != "" {
+				res.Next = presetNext(t, res, preset, overrides, outDir, review)
+			}
 			if asJSON {
 				if err := writeJSON(a.stdout, res); err != nil {
 					return err
@@ -99,6 +113,7 @@ goes, whether the tool is warm, the exact command it will run, and the
 	}
 	f := cmd.Flags()
 	f.StringVar(&inputs, "inputs", "", "input values as JSON, or @file.json")
+	f.StringVar(&preset, "preset", "", "start from a saved preset; --inputs override its values")
 	f.StringVar(&outDir, "out", "", "output folder (passed with the tool's output flag)")
 	f.BoolVar(&review, "review", false, "hold output for review (see 'maggot run --review')")
 	f.BoolVar(&asJSON, "json", false, "print JSON")
@@ -308,4 +323,41 @@ func (a *app) printPrepare(r prepareResult) {
 	if r.Next != "" {
 		fmt.Fprintf(w, "next:    %s\n", r.Next)
 	}
+}
+
+// presetNext is the next command for a preset run: --preset plus only the
+// values the caller gave, not the whole merged set.
+func presetNext(t *toolbox.Tool, res prepareResult, preset string, overrides map[string]any, outDir string, review bool) string {
+	next := []string{"maggot", "run", t.Ref(), "--json", "--preset", preset}
+	if review {
+		next = append(next, "--review")
+	}
+	if len(overrides) > 0 {
+		b, _ := json.Marshal(overrides)
+		next = append(next, "--inputs", string(b))
+	}
+	switch {
+	case outDir != "" && !review:
+		next = append(next, "--out", outDir)
+	case len(res.Decisions) > 0:
+		next = append(next, "--out", "<choose a folder>")
+	}
+	return strings.Join(quoteAll(next), " ")
+}
+
+// presetInputs merges a preset with --inputs JSON and returns the result
+// as --inputs JSON.
+func presetInputs(t *toolbox.Tool, preset, inputs string) (string, error) {
+	p, err := presets.Get(t.Manifest.ID, t.Dir, preset)
+	if err != nil {
+		return "", err
+	}
+	var over map[string]any
+	if inputs != "" {
+		if over, err = readInputs(inputs); err != nil {
+			return "", err
+		}
+	}
+	b, err := json.Marshal(presets.Merge(p, over))
+	return string(b), err
 }
