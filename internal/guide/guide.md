@@ -337,3 +337,40 @@ Tests must be free and work offline by default. Test with local fixtures,
 
 `maggot test <dir>` validates the manifest, checks requirements, then runs the
 cases. It exits 1 when anything fails.
+
+## Skills (workflows for agents)
+
+A tool does one job. A skill is a workflow: steps an agent follows, often
+using several tools plus its own scripts, other programs or APIs. Skills use
+the Agent Skills format and live in `<toolbox>/skills/<name>/`:
+
+```
+skills/video-short/
+  SKILL.md        frontmatter + instructions (keep under ~500 lines)
+  scripts/        code the steps run (relative paths from the folder)
+  references/     long docs the agent reads only when needed
+  assets/         templates, images, fonts, shaders
+```
+
+```yaml
+---
+name: video-short             # lowercase, digits, single hyphens; = folder name
+description: What it does and when to use it ("Use when ..."), max 1024 chars.
+metadata:
+  version: 1.0.0
+  maggot-uses: voxcpm-tts depth-map   # maggot tool ids (checked)
+  maggot-requires: ffmpeg node        # programs on PATH (checked)
+  maggot-env: STABILITY_API_KEY       # secrets (checked; passed by skill exec)
+---
+```
+
+Tool or script? Make a step a maggot tool when it is useful on its own (it
+gets a form, tests and search). Keep it as a script in the skill when it only
+makes sense inside this workflow.
+
+Workflow: propose the skill and wait for approval, `maggot skill new <name>`
+(drafts folder), write SKILL.md and scripts, run each script once,
+`maggot skill show <folder>` until it is ready, then hand it to the user.
+`maggot skill draft <name>` copies a toolbox skill to change it; bump
+`metadata.version`. Scripts that need the secrets run as
+`maggot skill exec <name> -- <command>`.

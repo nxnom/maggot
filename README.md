@@ -13,6 +13,11 @@ toolbox is the memory.
   a folder with a `tool.json` manifest. Tools run without maggot.
 - **One binary, no server, no MCP.** Agents call `maggot` through the shell.
 - **One skill** teaches agents to search the toolbox before writing code.
+- **Skills for workflows.** A toolbox can also hold
+  [Agent Skills](https://agentskills.io) (`skills/<name>/SKILL.md`):
+  step-by-step workflows that combine tools, scripts, programs and APIs.
+  Agents follow them; any tool that reads Agent Skills can install them
+  straight from the toolbox repo.
 - **Toolboxes are plain folders**, so you can keep them in git.
 
 ## Install
@@ -49,7 +54,7 @@ maggot run text-upper -- --upper --out out notes.txt
 | command | what it does |
 |---|---|
 | `toolbox init/add/list/remove/default` | create and register toolbox folders |
-| `list`, `search <words>` | find tools (`--json` for agents) |
+| `list`, `search <words>` | find tools and skills (`--json` for agents) |
 | `info <tool>` | short view: inputs, readiness, tested cases, examples (`--full` for the manifest and README) |
 | `prepare <tool> --inputs '{…}' --out <dir>` | check a run without running it: inputs, requirements, output folder, exact command |
 | `doctor [tool]` | check required binaries, versions and env vars; `--install` asks before installing |
@@ -64,10 +69,14 @@ maggot run text-upper -- --upper --out out notes.txt
 | `warm <tool> --for 30m`, `warm list`, `warm stop` | keep a slow-loading tool (e.g. a model) in memory so the next runs start fast |
 | `clean [runs\|drafts\|uploads\|all]` | show or delete leftovers in the data folder (never toolboxes or projects) |
 | `test <dir\|tool>`, `test --all` | validate and run `tests/cases.json`; network and paid cases only run with `--network` / `--paid`. Results show in `list`, `info` and the UI |
-| `import <file\|dir>`, `export <tool>`, `pack <dir>`, `remove <tool>` | share tools as `.maggot` archives (zip files) |
-| `secret set/rm/list` | store secret env values in the OS keychain, outside the toolbox |
+| `import <file\|dir>`, `export <tool>`, `pack <dir>`, `remove <tool>` | share tools and skills as `.maggot` archives (zip files) |
+| `secret set/rm/list` | store secret env values in the OS keychain, outside the toolbox (`--skill` for skills) |
 | `config [edit\|path\|show\|validate]` | maggot's own settings |
-| `skill install/uninstall/show` | the agent skill |
+| `skill install/uninstall/show` | maggot's own agent skill (no names) |
+| `skill list`, `skill show <name>` | toolbox skills, with a readiness check (tools, programs, secrets) |
+| `skill new <name>`, `skill draft <name>` | create a skill (Agent Skills format) or copy one to change it, in the drafts folder |
+| `skill install <name>` / `uninstall <name>` | link a toolbox skill into Claude Code / Codex skills folders (`--copy` to copy) |
+| `skill exec <name> -- <cmd>` | run a skill's script with its secrets in the environment |
 | `ui` | local web UI: a form for every tool, live runs, output previews |
 | `guide` | full tool authoring reference |
 
@@ -82,7 +91,30 @@ registered.
 ~/.config/maggot/config.json      registered toolboxes, default toolbox, runs_keep
 <toolbox>/maggot.json             toolbox name (marks the folder as a toolbox)
 <toolbox>/tools/<id>/tool.json    one tool: entry, requires, env, inputs, outputs
+<toolbox>/skills/<name>/SKILL.md  one skill (Agent Skills format) + scripts/, references/, assets/
 ```
+
+### Skills
+
+A skill is a folder in the [Agent Skills](https://agentskills.io) format, so
+it works with any agent that reads skills. maggot keeps its own fields under
+the standard `metadata` map:
+
+```yaml
+---
+name: video-short
+description: Make a 60 s horror short from stills and cloned voices. Use when ...
+metadata:
+  version: 1.0.0
+  maggot-uses: voxcpm-tts depth-map      # maggot tools the steps call
+  maggot-requires: ffmpeg node           # programs needed on PATH
+  maggot-env: STABILITY_API_KEY          # secrets (maggot secret set --skill)
+---
+```
+
+Because skills live in `skills/` at the toolbox root, a toolbox pushed to
+GitHub can also be installed with other skill installers (for example
+`npx skills add <owner>/<repo>`). See `examples/toolbox/skills/audio-clip`.
 
 The config folder is `$MAGGOT_CONFIG_DIR`, then `$XDG_CONFIG_HOME/maggot`, then
 `~/.config/maggot` (`%AppData%\maggot` on Windows).
@@ -106,6 +138,9 @@ maggot ui            # opens http://127.0.0.1:26244 in your browser
   from the end of each run. Unchecking it frees the memory at once.
 - "About this tool and its code" shows the README and every file (read-only),
   with a button to open the tool folder.
+- Skills have their own page: the instructions, the files, what they need
+  (tools, programs, secrets) and buttons to install them into Claude Code or
+  Codex. "Copy prompt" copies a prompt that tells your agent to use the skill.
 - Import `.maggot` files by dropping them on the page.
 - The server listens on 127.0.0.1 only and needs the token from the first
   link it prints (kept in the data dir, so bookmarks keep working).

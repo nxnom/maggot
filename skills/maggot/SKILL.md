@@ -1,6 +1,6 @@
 ---
 name: maggot
-description: "Shared local toolbox of tested CLI tools (maggot). Use BEFORE writing any script, utility or CLI for a reusable task — converting, resizing, compressing or renaming files, media/image/PDF/audio/video processing, data extraction, downloads, API helpers — and whenever the user asks to build, create or make a tool, CLI, script or utility: search maggot first, then reuse or improve an existing tool. Also use to create a new reusable tool and save it so every future project and agent can reuse it."
+description: "Shared local toolbox of tested CLI tools (maggot). Use BEFORE writing any script, utility or CLI for a reusable task — converting, resizing, compressing or renaming files, media/image/PDF/audio/video processing, data extraction, downloads, API helpers — and whenever the user asks to build, create or make a tool, CLI, script or utility: search maggot first, then reuse or improve an existing tool. Also use to create a new reusable tool and save it so every future project and agent can reuse it. maggot also keeps the user's skills: step-by-step workflows (SKILL.md) that combine tools, scripts, programs and APIs — check for one before a multi-step task, and save a workflow the user wants to repeat as a skill."
 ---
 
 # maggot
@@ -9,9 +9,18 @@ maggot is the user's shared toolbox of standalone CLI tools. Tools built in one
 project are reused in every other project and by every agent. Your memory does
 not matter: the toolbox is the memory.
 
+A toolbox holds two kinds of things:
+- **Tools** (`tools/<id>/tool.json`): one program with inputs, tests and a
+  form in the web UI. maggot runs them (`maggot run`).
+- **Skills** (`skills/<name>/SKILL.md`, the Agent Skills format): steps for
+  you to follow, often using several maggot tools plus the skill's own
+  scripts, other programs or APIs. You follow them; maggot does not run them.
+
 ## Rule
 
-Before you write code for a utility that could be reused, search maggot. This
+Before you write code for a utility that could be reused, or start a task with
+several steps (make a video, publish a release, process a batch), search
+maggot: `maggot search` returns matching tools and skills. This
 includes requests like "build a tool for X" or "make a CLI that does Y": a tool
 for X may already exist. Reuse a
 fitting tool. Write a new tool only when nothing fits, and only after the user
@@ -68,6 +77,21 @@ Propose the change first and wait for approval (step 1 below). Then
 how maggot connects the draft to the installed tool. In the web UI the user
 then sees "New version of <tool>" and a Changes tab with a diff against the
 installed version; point them to it when you hand over.
+
+## Use a skill
+
+1. `maggot search <the task> --json` lists matching skills under `skills`.
+2. `maggot skill show <name>` prints the folder, a readiness check (the
+   maggot tools it uses, programs on PATH, secrets) and the SKILL.md steps.
+   Fix what is missing first: a missing tool means search for it or propose
+   building it; ask the user before installing programs or setting secrets
+   (`maggot secret set --skill <name> <NAME>`).
+3. Follow the steps. Run maggot tools as in "Use a tool". Run the skill's
+   own scripts from its folder by absolute path (`<folder>/scripts/x.py`);
+   never copy them into the project. When a script needs the skill's
+   secrets, run it as `maggot skill exec <name> -- <command>`.
+4. If a step did not work or the user corrected you, propose a fix to the
+   skill (see "Create or change a skill").
 
 ## Create a tool
 
@@ -145,6 +169,42 @@ installed version; point them to it when you hand over.
    They run it there and import it with one click when they are happy. Only
    if the user tells you to import it, run `maggot import <dir> --yes`.
 
+## Create or change a skill
+
+Save a workflow as a skill when the user wants to repeat it ("do this again
+next time", "save this as a skill", "remember how we made this").
+
+1. **Propose first, then wait**, like a tool. The plan:
+   - name (lowercase, hyphens) and a description that says what it does
+     and when to use it ("Use when ...")
+   - the steps, in short
+   - for each step, where the work happens: an existing maggot tool; a new
+     maggot tool (when the step is useful on its own: it then gets a form,
+     tests and search, and you propose it separately); a script inside the
+     skill (only useful inside this workflow); or a program or API called
+     directly
+   - programs, secrets and paid services it needs, and rough cost or time
+   - the rules learned so far (what works, what to avoid)
+2. After a clear yes: `maggot skill new <name> --description "..."` creates
+   `SKILL.md` in the drafts folder (it prints the path). Fill in:
+   - `metadata`: `version`, `maggot-uses` (tool ids), `maggot-requires`
+     (programs), `maggot-env` (secret names), each a space-separated string
+   - the body: steps with exact commands, then the rules. Keep it under
+     ~500 lines; put long docs in `references/`, code in `scripts/`,
+     templates and images in `assets/`. Paths are relative to the folder.
+3. Run every script once on a small example. Check with
+   `maggot skill show <folder>` until it is ready (or only secrets the user
+   must set are missing).
+4. Hand it over: tell the user the folder and that they can read it in the
+   web UI (`maggot ui`, under Drafts) and import it there. Import it yourself
+   (`maggot import <folder> --yes`) only when the user says so. After import,
+   `maggot skill install <name>` links it into Claude Code and Codex so they
+   load it on their own; ask first.
+
+To change a skill: propose the change, then `maggot skill draft <name>`,
+edit the copy, bump `metadata.version`, and hand it over the same way. The
+user sees a Changes tab with a diff in the web UI.
+
 ## Where results go
 
 Before running a tool that writes files, decide where they go:
@@ -192,5 +252,7 @@ model, use `maggot new <id> --lang python --warm`.
 - `maggot clean` shows leftovers (web UI runs, drafts, uploads); delete them
   only when the user agrees.
 
-Secrets: declare them in `env` with `"secret": true`; the user stores them with
-`maggot secret set <tool> <NAME>`. Never write secrets into tool files.
+Secrets: declare them in `env` with `"secret": true` (tools) or in
+`metadata.maggot-env` (skills); the user stores them with
+`maggot secret set <tool> <NAME>` or `maggot secret set --skill <skill> <NAME>`.
+Never write secrets into tool or skill files.
