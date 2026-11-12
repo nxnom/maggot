@@ -271,6 +271,12 @@ func TestRunOverHTTP(t *testing.T) {
 		t.Fatalf("reveal: %v", ts.opened)
 	}
 	ts.do(t, "POST", "/api/reveal", map[string]any{"run": meta.ID, "path": "../../x"}, 404, nil)
+	// PDFs are served without the sandbox so the browser's PDF viewer works.
+	os.WriteFile(filepath.Join(final.OutDir, "doc.pdf"), []byte("%PDF-1.4"), 0o644)
+	r5, _ := ts.client.Get(ts.URL + "/api/runs/" + meta.ID + "/files/doc.pdf")
+	if r5.Header.Get("Content-Security-Policy") != "" || r5.Header.Get("Content-Type") != "application/pdf" {
+		t.Fatalf("pdf headers: %v", r5.Header)
+	}
 	ts.do(t, "DELETE", "/api/runs/"+meta.ID, nil, 200, nil)
 	ts.do(t, "GET", "/api/runs/"+meta.ID, nil, 404, nil)
 

@@ -292,8 +292,14 @@ func (s *Server) apiRunFile(w http.ResponseWriter, r *http.Request) error {
 	if r.URL.Query().Get("download") == "1" {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filepath.Base(p)))
 	}
-	w.Header().Set("Content-Type", mimeOf(p))
-	w.Header().Set("Content-Security-Policy", "sandbox") // previews of untrusted files (HTML, SVG) cannot run scripts
+	mt := mimeOf(p)
+	w.Header().Set("Content-Type", mt)
+	// Output files are untrusted: a sandbox keeps HTML or SVG from running
+	// scripts. PDFs are left out because the sandbox also blocks the
+	// browser's PDF viewer.
+	if mt != "application/pdf" {
+		w.Header().Set("Content-Security-Policy", "sandbox")
+	}
 	f, err := os.Open(p)
 	if err != nil {
 		return err

@@ -2,6 +2,7 @@
 import { h, clear, bytes, duration, toast, confirmDialog } from "./dom.js";
 import { get, post, fileURL } from "./api.js";
 import { pick } from "./picker.js";
+import { renderOutputs } from "./viewer.js";
 
 const MAX_LINES = 2000;
 
@@ -160,7 +161,7 @@ export class RunView {
         h("h3", { style: "font-size:14px;margin:0" }, external
           ? [`${n} new file${n === 1 ? "" : "s"} in `, h("code", null, detail.run.out_dir)]
           : `${n} file${n === 1 ? "" : "s"}`), move),
-        h("div", { class: "outputs" }, detail.outputs.slice(0, 60).map((f) => outputCard(id, f))));
+        outputsArea(id, detail.outputs));
       if (this.parts.logBox && detail.run.status === "succeeded") this.parts.logBox.open = false;
     } else if (detail.run.status === "succeeded" && !items.length && this.lines === 0) {
       items.push(h("p", { class: "muted" }, "Finished with no output."));
@@ -192,31 +193,8 @@ RunView.prototype.take = async function (id, n) {
   if (this.onTaken) this.onTaken();
 };
 
-function outputCard(runId, f) {
-  const url = fileURL(runId, f.path);
-  const type = f.mime.split("/")[0];
-  const links = h("div", { class: "links" },
-    h("a", { class: "btn small", href: url, target: "_blank", rel: "noopener" }, "Open"),
-    h("a", { class: "btn small", href: fileURL(runId, f.path, true) }, "Download"),
-    h("button", { class: "btn small quiet", type: "button", onclick: () => post("/api/reveal", { run: runId, path: f.path }).catch((e) => toast(e.message, true)) }, "Show in folder"));
-  // Audio: a compact row with a full-width player instead of an empty card.
-  if (type === "audio") {
-    return h("div", { class: "out-item out-audio" },
-      h("div", { class: "meta" }, h("div", { class: "name" }, f.path), h("div", { class: "muted" }, bytes(f.size)), links),
-      h("audio", { src: url, controls: true, preload: "metadata" }));
-  }
-  let media;
-  if (type === "image" && f.mime !== "image/heic") media = h("img", { src: url, alt: f.path, loading: "lazy" });
-  else if (type === "video") media = h("video", { src: url, controls: true, preload: "metadata" });
-  else if (type === "audio") media = h("audio", { src: url, controls: true, preload: "none" });
-  else media = h("span", { class: "ext", "aria-hidden": "true" }, (f.path.split(".").pop() || "file").slice(0, 5));
-  return h("div", { class: "out-item" },
-    h("div", { class: "media" }, media),
-    h("div", { class: "meta" },
-      h("div", { class: "name" }, f.path),
-      h("div", { class: "muted" }, bytes(f.size)),
-      h("div", { class: "links" },
-        h("a", { class: "btn small", href: url, target: "_blank", rel: "noopener" }, "Open"),
-        h("a", { class: "btn small", href: fileURL(runId, f.path, true) }, "Download"),
-        h("button", { class: "btn small quiet", type: "button", onclick: () => post("/api/reveal", { run: runId, path: f.path }).catch((e) => toast(e.message, true)) }, "Show in folder"))));
+function outputsArea(runId, files) {
+  const el = h("div", { class: "outputs-area" });
+  renderOutputs(el, runId, files);
+  return el;
 }
