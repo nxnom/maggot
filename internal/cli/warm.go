@@ -29,10 +29,7 @@ are coming, and stop it when done.`,
   maggot warm stop voice-clone`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			idleD, err := parseAge(idle)
-			if err != nil {
-				return err
-			}
+			idleD := time.Duration(0)
 			waitD, err := parseAge(wait)
 			if err != nil {
 				return err
@@ -48,6 +45,16 @@ are coming, and stop it when done.`,
 			if err := a.preflight(t); err != nil {
 				return err
 			}
+			switch {
+			case cmd.Flags().Changed("for"):
+				if idleD, err = parseAge(idle); err != nil {
+					return err
+				}
+			case t.Manifest.Warm != nil && t.Manifest.Warm.Minutes > 0:
+				idleD = time.Duration(t.Manifest.Warm.Minutes * float64(time.Minute))
+			default:
+				idleD = warm.DefaultIdle
+			}
 			env, err := a.secretEnv(t)
 			if err != nil {
 				return err
@@ -62,7 +69,7 @@ are coming, and stop it when done.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&idle, "for", "10m", "stop after this long without a job, e.g. 15m, 2h")
+	cmd.Flags().StringVar(&idle, "for", "10m", "stop after this long without a job, e.g. 15m, 2h (default: the tool's warm.minutes, else 10m)")
 	cmd.Flags().StringVar(&wait, "wait", "5m", "how long to wait for loading to finish")
 
 	list := &cobra.Command{

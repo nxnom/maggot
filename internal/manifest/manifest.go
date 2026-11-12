@@ -197,6 +197,11 @@ func (o *Option) UnmarshalJSON(b []byte) error {
 // jobs. Normal runs forward their job to it when it is running.
 type Warm struct {
 	Args []string `json:"args"`
+	// DefaultOn makes "keep in memory" start checked in the web UI (the
+	// user's own choice for the tool still wins).
+	DefaultOn bool `json:"default_on,omitempty"`
+	// Minutes is the default time to stay loaded without a job (default 10).
+	Minutes float64 `json:"minutes,omitempty"`
 }
 
 // Output kinds.

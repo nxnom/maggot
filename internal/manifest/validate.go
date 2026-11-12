@@ -81,6 +81,9 @@ func (m *Manifest) Validate() error {
 	if m.Warm != nil && len(m.Warm.Args) == 0 {
 		v.add("warm.args", `needs the args that start serve mode, e.g. ["--serve"]`)
 	}
+	if m.Warm != nil && m.Warm.Minutes != 0 && m.Warm.Minutes < 1 {
+		v.add("warm.minutes", "must be at least 1")
+	}
 	if o := m.Outputs; o != nil {
 		if o.Progress != nil {
 			re, err := regexp.Compile(o.Progress.Regex)

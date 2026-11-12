@@ -398,14 +398,15 @@ async function toolPage(spec) {
     } catch (err) { cmd.classList.add("err"); cmd.textContent = err.message; }
   }, 120);
   const form = buildForm(m.inputs || [], saved, preview);
-  const options = (outControl || warmBox)
-    ? h("div", { class: "fieldset tp-options" }, h("h3", { class: "group-title" }, "Options"), outControl, warmBox ? h("div", { class: "field" }, warmBox) : null)
+  const options = outControl
+    ? h("div", { class: "fieldset tp-options" }, h("h3", { class: "group-title" }, "Options"), outControl)
     : null;
   if (options) form.el.append(options);
   const presetBar = (m.inputs || []).length ? h("div", { class: "preset-bar" }) : null;
   if (presetBar) presetControls(tool, form, presetBar);
   const formEl = h("form", { class: "form tp-form", novalidate: true, "aria-label": "Inputs" },
     presetBar,
+    warmBox ? h("div", { class: "warm-bar" }, warmBox) : null,
     form.el,
     h("div", { class: "tp-dock" },
       cmd,
@@ -574,9 +575,13 @@ async function toolPage(spec) {
 // Warm control: "Keep in memory between runs for N min". Checking it does
 // not load anything; the next Run loads the tool once and keeps it. The
 // countdown starts after each run. Unchecking stops it and frees the memory.
+// The user's choice for a tool wins; otherwise the tool's own default
+// (warm.default_on, warm.minutes); otherwise off, 10 minutes.
 function warmPref(tool) {
-  const p = store("warm:" + tool.ref) || {};
-  return { on: !!p.on, minutes: p.minutes > 0 ? p.minutes : 10 };
+  const w = tool.manifest.warm || {};
+  const p = store("warm:" + tool.ref);
+  if (p) return { on: !!p.on, minutes: p.minutes > 0 ? p.minutes : (w.minutes || 10) };
+  return { on: !!w.default_on, minutes: w.minutes || 10 };
 }
 
 function renderWarm(tool, el, info) {

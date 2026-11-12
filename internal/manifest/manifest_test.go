@@ -109,6 +109,7 @@ func TestParseInvalid(t *testing.T) {
 		{"files flag no repeat", func(m map[string]any) { input(m, 3)["arg"] = map[string]any{"flag": "--in"} }, "need repeat"},
 		{"one_of unknown", func(m map[string]any) { m["one_of"] = []any{[]any{"width", "nope"}} }, "unknown input \"nope\""},
 		{"one_of single", func(m map[string]any) { m["one_of"] = []any{[]any{"width"}} }, "at least two"},
+		{"warm minutes", func(m map[string]any) { m["warm"] = map[string]any{"args": []any{"--serve"}, "minutes": 0.5} }, "warm.minutes"},
 		{"warm without args", func(m map[string]any) { m["warm"] = map[string]any{"args": []any{}} }, "warm.args"},
 		{"no kind", func(m map[string]any) { m["outputs"] = map[string]any{"dir_flag": "--out"} }, "outputs.kind"},
 		{"bad kind", func(m map[string]any) { m["outputs"] = map[string]any{"kind": "video"} }, "outputs.kind"},

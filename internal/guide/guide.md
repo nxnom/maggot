@@ -236,7 +236,13 @@ Ignore the variable when it is not set. Never fail because of it.
 When most of a run is loading something (a model, a large index), let the
 tool stay loaded between runs. Declare it in `tool.json`:
 
-    "warm": {"args": ["--serve"]}
+    "warm": {"args": ["--serve"], "minutes": 10, "default_on": false}
+
+`minutes` is the default time to stay loaded without a job (used by
+`maggot warm` and the web UI). `default_on: true` makes "keep in memory"
+start checked in the web UI; use it only for tools that are nearly always
+run several times in a row, since a warm tool holds its memory. The user's
+own choice for a tool always wins.
 
 - `maggot warm <tool> --for 30m` (or "Keep warm" in the web UI) starts
   `<entry> --serve` in the background with `MAGGOT_WARM_SOCKET` (a Unix socket
