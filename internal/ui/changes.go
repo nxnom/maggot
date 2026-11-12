@@ -162,20 +162,33 @@ func (s *Server) draftAndInstalled(r *http.Request) (*draftInfo, *toolbox.Tool, 
 
 // apiChanges lists the files a draft changed compared with the installed tool.
 func (s *Server) apiChanges(w http.ResponseWriter, r *http.Request) error {
+	draftDir, of, installedDir, err := s.changePair(r)
+	if err != nil {
+		return err
+	}
+	changes, err := compareDirs(installedDir, draftDir)
+	if err != nil {
+		return err
+	}
+	return ok(w, map[string]any{"of": of, "files": changes})
+}
+
+// changePair returns the draft folder, the installed tool or skill it
+// changes, and that one's folder.
+func (s *Server) changePair(r *http.Request) (string, *toolLink, string, error) {
+	if isSkillReq(r) {
+		return s.skillDraftAndInstalled(r.URL.Query().Get("ref"))
+	}
 	d, t, err := s.draftAndInstalled(r)
 	if err != nil {
-		return err
+		return "", nil, "", err
 	}
-	changes, err := compareDirs(t.Dir, d.Path)
-	if err != nil {
-		return err
-	}
-	return ok(w, map[string]any{"of": linkTo(t), "files": changes})
+	return d.Path, linkTo(t), t.Dir, nil
 }
 
 // apiDiff returns a line diff of one file: installed version → draft.
 func (s *Server) apiDiff(w http.ResponseWriter, r *http.Request) error {
-	d, t, err := s.draftAndInstalled(r)
+	draftDir, _, installedDir, err := s.changePair(r)
 	if err != nil {
 		return err
 	}
@@ -194,11 +207,11 @@ func (s *Server) apiDiff(w http.ResponseWriter, r *http.Request) error {
 		}
 		return data, err
 	}
-	a, err := read(t.Dir)
+	a, err := read(installedDir)
 	if err != nil {
 		return err
 	}
-	b, err := read(d.Path)
+	b, err := read(draftDir)
 	if err != nil {
 		return err
 	}

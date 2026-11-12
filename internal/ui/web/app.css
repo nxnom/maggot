@@ -892,3 +892,42 @@ dialog.picker[open] { display: flex; flex-direction: column; width: min(760px, c
 dialog.picker .dlg-body { flex: 1; min-height: 0; max-height: none; overflow: hidden; display: flex; }
 .picker-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 dialog.picker .picker-list { flex: 1; min-height: 0; max-height: none; }
+
+/* ---------- skills ---------- */
+.kind-chip {
+  display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+  background: #E7F9FF; color: #206A83; white-space: nowrap;
+}
+.kind-chip.small { font-size: 10px; padding: 0 5px; margin-left: 6px; vertical-align: 1px; }
+.group-help { margin: -4px 0 10px; font-size: 13px; }
+.skill-intro { margin: 0; font-size: 13px; }
+.skill-steps .md { max-width: 78ch; }
+.req-btn { cursor: pointer; font: inherit; font-size: 11px; font-weight: 700; }
+.req-btn:hover { text-decoration: underline; }
+.tab-count.bad:not(:empty) { background: #FFECEB; color: #AE2E24; }
+.setup-help { margin: 0 0 12px; font-size: 13.5px; max-width: 72ch; }
+.need-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.need { display: grid; grid-template-columns: 20px minmax(140px, max-content) 1fr auto; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); }
+.need:first-child { border-top: 0; }
+.need-mark { font-weight: 700; color: #216E4E; text-align: center; }
+.need.bad .need-mark { color: #AE2E24; }
+.need.off .need-mark { color: var(--ink-2); }
+.need-label { font-weight: 600; }
+.need-detail { font-size: 13px; overflow-wrap: anywhere; min-width: 0; }
+.setup-secrets { margin-top: 16px; }
+.setup-secrets .group-title { margin: 0 0 6px; }
+.prompt-text { white-space: pre-wrap; }
+.tp-docs .kv { grid-template-columns: max-content minmax(0, 1fr); }
+.tp-docs .kv dd, .tp-docs .kv code { overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 640px) {
+  .tp-docs .kv { grid-template-columns: 1fr; }
+  .tp-docs .kv dt { margin-top: 6px; }
+  .need { grid-template-columns: 20px 1fr; }
+  .need-detail, .need > .btn { grid-column: 2; justify-self: start; }
+}
+@media (prefers-color-scheme: dark) {
+  .kind-chip { background: #164555; color: #9DD9EE; }
+  .tab-count.bad:not(:empty) { background: #5D1F1A; color: #FD9891; }
+  .need-mark { color: #7EE2B8; }
+  .need.bad .need-mark { color: #FD9891; }
+}

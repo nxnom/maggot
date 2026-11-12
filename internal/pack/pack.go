@@ -330,6 +330,10 @@ func (s *Staged) NeedsForce() bool { return s.Action == "downgrade" || s.Action 
 
 // Commit moves the staged tool into place, replacing any existing folder.
 func (s *Staged) Commit() error {
+	// The temp folder is private (0700); the installed folder is not.
+	if err := os.Chmod(s.tmpDir, 0o755); err != nil {
+		return err
+	}
 	backup := ""
 	if _, err := os.Stat(s.Target); err == nil {
 		backup = s.tmpDir + ".old"

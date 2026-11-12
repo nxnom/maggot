@@ -313,7 +313,7 @@ func skillAgents(sk *toolbox.Skill) []agentState {
 		return []agentState{}
 	}
 	out := []agentState{}
-	for _, ag := range skill.Agents() {
+	for _, ag := range skill.AgentsInOrder() {
 		state, p, err := skill.State(home, ag, sk.Meta.Name, sk.Dir)
 		if err == nil {
 			out = append(out, agentState{Agent: ag, State: state, Path: p})

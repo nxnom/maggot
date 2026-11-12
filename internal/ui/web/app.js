@@ -6,12 +6,13 @@ import { RunView } from "./run.js";
 import { renderMarkdown } from "./md.js";
 import { language, highlightLines } from "./hl.js";
 import { fileIcon, folderIcon } from "./icons.js";
+import { skillPage, skillHash, needsLabel } from "./skill.js";
 
 
 const side = document.getElementById("side");
 const main = document.getElementById("main");
 let state = null;
-let filter = { text: "", toolbox: store("filter:toolbox") || "", refs: null };
+let filter = { text: "", toolbox: store("filter:toolbox") || "", refs: null, skills: null };
 let page = null; // cleanup for the current page
 
 // ---------- data ----------
@@ -29,21 +30,40 @@ function route() {
   page = null;
   const hash = decodeURIComponent(location.hash.slice(1));
   if (hash.startsWith("/tool/")) return toolPage(hash.slice(6));
+  if (hash.startsWith("/skill/")) return skillPage(hash.slice(7), skillCtx, main);
   if (hash === "/toolboxes") return toolboxesPage();
   return homePage();
 }
 window.addEventListener("hashchange", () => { renderSide(); route(); main.focus({ preventScroll: true }); });
 
+// What the skill page shares with the tool page.
+const skillCtx = {
+  loadState: () => loadState(),
+  loadFiles: (t, el, start) => loadFiles(t, el, start),
+  loadChanges: (t, el, wanted) => loadChanges(t, el, wanted),
+  stageImport: (src, draft) => stageImport(src, draft),
+  setPage: (p) => { page = p; },
+  refresh: () => { loadState().then(route); },
+};
+
+// kindQ adds kind=skill to API calls about a skill; pageHash is the page URL.
+const kindQ = (t) => (t.kind === "skill" ? "&kind=skill" : "");
+const pageHash = (t) => (t.kind === "skill" ? skillHash(t.ref) : "#/tool/" + encodeURIComponent(t.ref));
+
 // ---------- sidebar ----------
 
 function renderSide() {
   if (!state) return;
-  const current = decodeURIComponent(location.hash.slice(1)).replace(/^\/tool\//, "").split("?")[0];
+  const hashNow = decodeURIComponent(location.hash.slice(1));
+  const onSkill = hashNow.startsWith("/skill/");
+  const current = hashNow.replace(/^\/(tool|skill)\//, "").split("?")[0];
   const search = h("input", {
-    class: "search", type: "search", placeholder: "Search tools", "aria-label": "Search tools",
+    class: "search", type: "search", placeholder: "Search tools and skills", "aria-label": "Search tools and skills",
     value: filter.text, oninput: debounce(async (e) => {
       filter.text = e.target.value;
-      filter.refs = filter.text.trim() ? (await get(`/api/search?q=${q(filter.text)}`)).refs : null;
+      const res = filter.text.trim() ? await get(`/api/search?q=${q(filter.text)}`) : null;
+      filter.refs = res ? res.refs : null;
+      filter.skills = res ? res.skills : null;
       renderList();
     }, 150),
   });
@@ -56,11 +76,14 @@ function renderSide() {
   function renderList() {
     let tools = state.tools.filter((t) => !filter.toolbox || t.toolbox === filter.toolbox);
     const items = [];
+    let skills = (state.skills || []).filter((s) => !filter.toolbox || s.toolbox === filter.toolbox);
     if (filter.refs) {
       const byRef = new Map(tools.map((t) => [t.ref, t]));
       tools = filter.refs.map((r) => byRef.get(r)).filter(Boolean);
       tools.forEach((t) => items.push(toolItem(t)));
-      if (!tools.length) items.push(h("li", { class: "muted", style: "padding:8px" }, "No tools match."));
+      const bySkill = new Map(skills.map((s) => [s.ref, s]));
+      skills = (filter.skills || []).map((r) => bySkill.get(r)).filter(Boolean);
+      if (!tools.length && !skills.length) items.push(h("li", { class: "muted", style: "padding:8px" }, "Nothing matches."));
     } else {
       const groups = new Map();
       for (const t of tools) {
@@ -74,23 +97,39 @@ function renderSide() {
         groups.get(g).sort((a, b) => a.name.localeCompare(b.name)).forEach((t) => items.push(toolItem(t)));
       }
     }
+    if (skills.length) {
+      items.push(h("li", { class: "tool-group", "aria-hidden": "true" }, "Skills"));
+      skills.forEach((s) => items.push(skillItem(s)));
+    }
     clear(list, items);
+  }
+  function skillItem(s) {
+    const showBox = boxes.length > 1 && !filter.toolbox;
+    return h("li", null, h("a", {
+      class: "tool-link", href: skillHash(s.ref), "aria-current": onSkill && current === s.ref ? "page" : null,
+    }, h("span", { class: "name" }, s.name, s.draft ? h("span", { class: "draft-flag", title: "Draft in progress" }, "draft") : null),
+    h("span", { class: "desc" }, showBox ? `${s.toolbox}: ${s.description}` : s.description)));
   }
   function toolItem(t) {
     const showBox = boxes.length > 1 && !filter.toolbox;
     return h("li", null, h("a", {
-      class: "tool-link", href: "#/tool/" + encodeURIComponent(t.ref), "aria-current": current === t.ref ? "page" : null,
+      class: "tool-link", href: "#/tool/" + encodeURIComponent(t.ref), "aria-current": !onSkill && current === t.ref ? "page" : null,
     }, h("span", { class: "name" }, t.name, t.draft ? h("span", { class: "draft-flag", title: `Draft v${t.draft.version} in progress` }, "draft") : null),
     h("span", { class: "desc" }, showBox ? `${t.toolbox}: ${t.description}` : t.description)));
   }
   renderList();
 
-  const drafts = state.drafts.length ? h("ul", { class: "tool-list drafts", "aria-label": "Drafts" },
+  const skillDrafts = state.skill_drafts || [];
+  const drafts = state.drafts.length || skillDrafts.length ? h("ul", { class: "tool-list drafts", "aria-label": "Drafts" },
     h("li", { class: "tool-group", "aria-hidden": "true" }, "Drafts"),
     state.drafts.map((d) => h("li", null, h("a", {
       class: "tool-link" + (d.error ? " broken" : ""), href: "#/tool/" + encodeURIComponent(d.ref),
-      "aria-current": current === d.ref ? "page" : null, title: d.path,
-    }, h("span", { class: "name" }, d.name || d.id), h("span", { class: "desc" }, draftLine(d)))))) : null;
+      "aria-current": !onSkill && current === d.ref ? "page" : null, title: d.path,
+    }, h("span", { class: "name" }, d.name || d.id), h("span", { class: "desc" }, draftLine(d))))),
+    skillDrafts.map((d) => h("li", null, h("a", {
+      class: "tool-link" + (d.error ? " broken" : ""), href: skillHash(d.ref),
+      "aria-current": onSkill && current === d.ref ? "page" : null, title: d.path,
+    }, h("span", { class: "name" }, d.name, h("span", { class: "kind-chip small" }, "Skill")), h("span", { class: "desc" }, skillDraftLine(d)))))) : null;
 
   clear(side,
     h("a", { class: "wordmark", href: "#/" }, "maggot", h("small", null, state.version)),
@@ -98,7 +137,7 @@ function renderSide() {
     state.toolboxes.length ? [search, tbSelect, list] : h("p", { class: "muted", style: "margin:0;flex:1" }, "No toolbox yet."),
     h("div", { class: "side-foot" },
       h("a", { class: "btn small", href: "#/toolboxes" }, "Toolboxes"),
-      state.toolboxes.length ? h("button", { class: "btn small", type: "button", onclick: importDialog }, "Import tool") : null,
+      state.toolboxes.length ? h("button", { class: "btn small", type: "button", onclick: importDialog }, "Import…") : null,
       h("button", { class: "btn small", type: "button", onclick: tryDialog }, "Try a tool folder…")));
 }
 
@@ -136,7 +175,7 @@ async function homePage() {
   // ---------- main column: search + tool cards ----------
   const results = h("div", { class: "home-results" });
   const search = h("input", {
-    class: "home-search", type: "search", "aria-label": "Search tools",
+    class: "home-search", type: "search", "aria-label": "Search tools and skills",
     placeholder: "What do you want to do? For example: convert a video to MP3",
   });
   const card = (t) => h("a", { class: "tool-card", href: "#/tool/" + encodeURIComponent(t.ref) },
@@ -149,8 +188,22 @@ async function homePage() {
       state.warm.some((w) => w.ref === t.ref && w.running) ? h("span", { class: "req warm-on" }, "In memory") : null,
       t.draft ? h("span", { class: "req draft-chip" }, `Draft v${t.draft.version}`) : null,
       state.toolboxes.length > 1 ? h("span", { class: "muted" }, t.toolbox) : null));
+  const skills = state.skills || [];
+  const bySkill = new Map(skills.map((s) => [s.ref, s]));
+  const skillCard = (s) => h("a", { class: "tool-card skill-card", href: skillHash(s.ref) },
+    h("span", { class: "tool-card-head" }, h("span", { class: "tool-card-name" }, s.name), s.version ? h("span", { class: "tp-version" }, "v" + s.version) : null),
+    h("span", { class: "tool-card-desc" }, s.description),
+    h("span", { class: "tool-card-chips" },
+      h("span", { class: "kind-chip" }, "Skill"),
+      s.ready ? h("span", { class: "req" }, "Ready") : h("span", { class: "req bad", title: s.missing.join("\n") }, needsLabel(s.missing)),
+      s.draft ? h("span", { class: "req draft-chip" }, "Draft" + (s.draft.version ? " v" + s.draft.version : "")) : null,
+      state.toolboxes.length > 1 ? h("span", { class: "muted" }, s.toolbox) : null));
+  const skillsBlock = (list) => h("section", { class: "tool-group-block" },
+    h("h2", null, "Skills", h("span", { class: "muted" }, String(list.length))),
+    h("p", { class: "muted group-help" }, "Step-by-step instructions your coding agent follows. They can use several tools, scripts and programs."),
+    h("div", { class: "tool-cards" }, list.map(skillCard)));
   function showAll() {
-    if (!state.tools.length) {
+    if (!state.tools.length && !skills.length) {
       return clear(results, h("div", { class: "home-empty" },
         h("h2", null, "No tools yet"),
         h("p", null, "Ask your coding agent to build one: with the maggot skill it creates a draft, tests it and gives it to you to try. Or import a .maggot file."),
@@ -165,7 +218,8 @@ async function homePage() {
     const names = [...groups.keys()].sort((a, b) => (a === "Other") - (b === "Other") || a.localeCompare(b));
     clear(results, names.map((g) => h("section", { class: "tool-group-block" },
       h("h2", null, g, h("span", { class: "muted" }, String(groups.get(g).length))),
-      h("div", { class: "tool-cards" }, groups.get(g).sort((a, b) => a.name.localeCompare(b.name)).map(card)))));
+      h("div", { class: "tool-cards" }, groups.get(g).sort((a, b) => a.name.localeCompare(b.name)).map(card)))),
+    skills.length ? skillsBlock([...skills].sort((a, b) => a.name.localeCompare(b.name))) : null);
   }
   const runSearch = debounce(async () => {
     const term = search.value.trim();
@@ -174,9 +228,13 @@ async function homePage() {
     try { res = await get(`/api/search?q=${q(term)}`); } catch { return; }
     if (search.value.trim() !== term) return;
     const found = res.refs.map((r) => byRef.get(r)).filter(Boolean);
-    if (found.length) {
-      return clear(results, h("p", { class: "muted home-count" }, `${found.length} matching tool${found.length === 1 ? "" : "s"}`),
-        h("div", { class: "tool-cards" }, found.map(card)));
+    const foundSkills = (res.skills || []).map((r) => bySkill.get(r)).filter(Boolean);
+    if (found.length || foundSkills.length) {
+      const count = [found.length ? `${found.length} tool${found.length === 1 ? "" : "s"}` : null,
+        foundSkills.length ? `${foundSkills.length} skill${foundSkills.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" and ");
+      return clear(results, h("p", { class: "muted home-count" }, `${count} match`),
+        found.length ? h("div", { class: "tool-cards" }, found.map(card)) : null,
+        foundSkills.length ? h("div", { class: "tool-cards", style: found.length ? "margin-top:12px" : null }, foundSkills.map(skillCard)) : null);
     }
     const close = res.closest.map((r) => byRef.get(r)).filter(Boolean);
     clear(results, h("div", { class: "home-empty" },
@@ -204,11 +262,16 @@ async function homePage() {
           h("span", { class: "muted" }, w.running ? `stops in ${Math.max(1, Math.round(w.idle_left / 60))} min · ${w.jobs} run${w.jobs === 1 ? "" : "s"}` : "loading…"), stop);
       }))));
   }
-  if (state.drafts.length) {
+  const skillDrafts = state.skill_drafts || [];
+  if (state.drafts.length || skillDrafts.length) {
     sections.push(h("section", { class: "home-panel" }, h("h2", null, "Drafts to try"),
       h("ul", { class: "home-list" }, state.drafts.map((d) => h("li", null,
         h("span", { class: "home-draft" }, h("a", { href: "#/tool/" + encodeURIComponent(d.ref) }, d.name || d.id),
           h("span", { class: d.error ? "muted bad-text" : "muted" }, draftLine(d))),
+        d.error ? null : h("button", { class: "btn small", type: "button", onclick: () => stageImport(d.path, d) }, d.of ? "Update…" : "Import…"))),
+      skillDrafts.map((d) => h("li", null,
+        h("span", { class: "home-draft" }, h("a", { href: skillHash(d.ref) }, d.name, h("span", { class: "kind-chip small" }, "Skill")),
+          h("span", { class: d.error ? "muted bad-text" : "muted" }, skillDraftLine(d))),
         d.error ? null : h("button", { class: "btn small", type: "button", onclick: () => stageImport(d.path, d) }, d.of ? "Update…" : "Import…"))))));
   }
   const recent = h("ul", { class: "home-list" }, h("li", { class: "muted" }, "Loading…"));
@@ -217,8 +280,10 @@ async function homePage() {
 
   clear(main, h("div", { class: "home" },
     h("div", { class: "home-main" },
-      h("h1", { class: "page-title" }, "Tools"),
-      h("p", { class: "muted", style: "margin:0 0 14px" }, `${state.tools.length} tool${state.tools.length === 1 ? "" : "s"} in ${state.toolboxes.length} toolbox${state.toolboxes.length === 1 ? "" : "es"}`),
+      h("h1", { class: "page-title" }, skills.length ? "Tools and skills" : "Tools"),
+      h("p", { class: "muted", style: "margin:0 0 14px" }, `${state.tools.length} tool${state.tools.length === 1 ? "" : "s"}` +
+        (skills.length ? ` and ${skills.length} skill${skills.length === 1 ? "" : "s"}` : "") +
+        ` in ${state.toolboxes.length} toolbox${state.toolboxes.length === 1 ? "" : "es"}`),
       search, problemsNotice(), results),
     side));
   const onKey = (e) => { if (e.key === "/" && document.activeElement !== search && !e.target.closest("input, textarea, select")) { e.preventDefault(); search.focus(); } };
@@ -303,13 +368,13 @@ function importDialog() {
   const fileInput = h("input", { type: "file", accept: ".maggot,.zip", class: "hidden" });
   fileInput.addEventListener("change", () => { if (fileInput.files[0]) { close(); stageImport(fileInput.files[0]); } });
   const { close } = openDialog({
-    title: "Import a tool",
+    title: "Import a tool or skill",
     body: h("div", null,
-      h("p", { style: "margin-top:0" }, "Choose a .maggot archive, or a tool folder (one with a tool.json). You can also drop a .maggot file anywhere on this page."),
+      h("p", { style: "margin-top:0" }, "Choose a .maggot archive, a tool folder (one with a tool.json) or a skill folder (one with a SKILL.md). You can also drop a .maggot file anywhere on this page."),
       fileInput,
       h("div", { class: "row" },
         h("button", { class: "btn", type: "button", onclick: () => fileInput.click() }, "Choose archive…"),
-        h("button", { class: "btn", type: "button", onclick: async () => { const p = await pick({ mode: "dir", title: "Choose a tool folder" }); if (p) { close(); stageImport(p); } } }, "Choose tool folder…"))),
+        h("button", { class: "btn", type: "button", onclick: async () => { const p = await pick({ mode: "dir", title: "Choose a tool or skill folder" }); if (p) { close(); stageImport(p); } } }, "Choose folder…"))),
     actions: [{ label: "Cancel", class: "quiet" }],
   });
 }
@@ -324,6 +389,7 @@ async function stageImport(src, draft) {
       staged = await api("POST", "/api/import", fd);
     }
   } catch (err) { return toast(err.message, true); }
+  if (staged.preview.kind === "skill") return confirmSkillImport(staged, draft);
   const m = staged.preview.manifest;
   const removeDraft = h("input", { type: "checkbox", checked: true });
   const action = { install: "Install", upgrade: "Upgrade", downgrade: "Downgrade", reinstall: "Reinstall" }[staged.preview.action];
@@ -351,6 +417,42 @@ async function stageImport(src, draft) {
           toast(`${{ Install: "Installed", Upgrade: "Upgraded", Downgrade: "Downgraded", Reinstall: "Reinstalled" }[action]} ${m.name}.`);
           await loadState();
           location.hash = "#/tool/" + encodeURIComponent(res.ref);
+        } catch (err) { toast(err.message, true); }
+      } },
+    ],
+    onClose: () => { if (!committed) del(`/api/import/${staged.token}`).catch(() => {}); },
+  });
+}
+
+// confirmSkillImport asks before a skill goes into the toolbox.
+function confirmSkillImport(staged, draft) {
+  const p = staged.preview, sk = p.skill;
+  const removeDraft = h("input", { type: "checkbox", checked: true });
+  const action = { install: "Install", upgrade: "Upgrade", downgrade: "Downgrade", reinstall: "Reinstall" }[p.action];
+  let committed = false;
+  openDialog({
+    title: `${action} the skill ${sk.meta.name}?`,
+    body: h("div", null,
+      h("dl", { class: "kv" },
+        h("dt", null, "Skill"), h("dd", null, sk.meta.name),
+        h("dt", null, "Version"), h("dd", null, (sk.version || "none") + (p.existing ? `, installed: ${p.existing}` : "")),
+        h("dt", null, "Toolbox"), h("dd", null, staged.toolbox),
+        h("dt", null, "Uses tools"), h("dd", null, (sk.uses || []).join(", ") || "none"),
+        h("dt", null, "Needs"), h("dd", null, [...(sk.requires || []), ...(sk.env || [])].join(", ") || "nothing else"),
+        h("dt", null, "Size"), h("dd", null, `${p.files} files, ${bytes(p.bytes)}`)),
+      h("p", null, sk.meta.description),
+      h("p", { class: "notice", style: "background:var(--sunk);color:var(--ink)" }, "Your coding agent follows this skill and may run its scripts on this computer. Import it only if you trust where it came from."),
+      draft ? h("label", { class: "check" }, removeDraft, h("span", null, "Delete the draft after importing")) : null),
+    actions: [
+      { label: "Cancel", class: "quiet" },
+      { label: action, class: staged.needs_force ? "danger" : "green", onClick: async () => {
+        try {
+          const res = await post(`/api/import/${staged.token}`, { force: staged.needs_force });
+          committed = true;
+          if (draft && removeDraft.checked) await del(`/api/drafts?kind=skill&ref=${q(draft.ref)}`).catch(() => {});
+          toast(`${{ Install: "Installed", Upgrade: "Upgraded", Downgrade: "Downgraded", Reinstall: "Reinstalled" }[action]} the skill ${sk.meta.name}.`);
+          await loadState();
+          location.hash = skillHash(res.ref);
         } catch (err) { toast(err.message, true); }
       } },
     ],
@@ -824,7 +926,7 @@ const LANG_NAMES = { json: "JSON", python: "Python", shell: "Shell", js: "JavaSc
 // loadFiles shows the tool's files (read-only) with a code view.
 async function loadFiles(tool, el, startPath) {
   let res;
-  try { res = await get(`/api/tool/files?ref=${q(tool.ref)}`); } catch (e) { return toast(e.message, true); }
+  try { res = await get(`/api/tool/files?ref=${q(tool.ref)}${kindQ(tool)}`); } catch (e) { return toast(e.message, true); }
   const view = h("div", { class: "code-view" });
   const list = h("ul", { class: "file-list", "aria-label": "Files" });
   let current = null;
@@ -834,7 +936,7 @@ async function loadFiles(tool, el, startPath) {
     current = btn;
     clear(view, h("p", { class: "muted" }, "Loading…"));
     let file;
-    try { file = await get(`/api/tool/file?ref=${q(tool.ref)}&path=${q(f.path)}`); } catch (e) { return clear(view, h("p", { class: "notice" }, e.message)); }
+    try { file = await get(`/api/tool/file?ref=${q(tool.ref)}&path=${q(f.path)}${kindQ(tool)}`); } catch (e) { return clear(view, h("p", { class: "notice" }, e.message)); }
     if (file.binary) return clear(view, h("div", { class: "code-head" }, h("code", null, f.path), h("span", { class: "muted" }, bytes(file.size))), h("p", { class: "muted", style: "padding:12px" }, "Binary file, not shown."));
     const text = file.text.replace(/\n$/, "");
     const lang = language(f.path, text);
@@ -927,6 +1029,12 @@ function draftLine(d) {
   return d.kind === "draft" ? "New tool · v" + d.version : d.path;
 }
 
+function skillDraftLine(d) {
+  if (d.error) return "Invalid SKILL.md";
+  if (d.of) return `New version of ${d.of.name}` + (d.of.version || d.version ? `: v${d.of.version || "?"} → v${d.version || "?"}` : "");
+  return "New skill" + (d.version ? " · v" + d.version : "");
+}
+
 // newer compares two semver strings (pre-release tags ignored).
 function newer(a, b) {
   const pa = a.split(/[-+]/)[0].split(".").map(Number), pb = b.split(/[-+]/)[0].split(".").map(Number);
@@ -968,20 +1076,20 @@ function draftNote(draft, m, showChanges) {
 async function loadChanges(tool, el, wanted) {
   clear(el, h("p", { class: "muted", style: "padding:16px" }, "Comparing…"));
   let res;
-  try { res = await get(`/api/tool/changes?ref=${q(tool.ref)}`); } catch (e) { return clear(el, h("p", { class: "notice" }, e.message)); }
+  try { res = await get(`/api/tool/changes?ref=${q(tool.ref)}${kindQ(tool)}`); } catch (e) { return clear(el, h("p", { class: "notice" }, e.message)); }
   if (!res.files.length) {
     return clear(el, h("div", { class: "home-empty", style: "margin:16px" }, h("h2", null, "No changes yet"),
-      h("p", null, `This draft has the same files as the installed ${res.of.name} v${res.of.version}.`)));
+      h("p", null, `This draft has the same files as the installed ${res.of.name}${res.of.version ? " v" + res.of.version : ""}.`)));
   }
   const view = h("div", { class: "tp-result diff-view" });
   const buttons = new Map();
   const label = { added: "A", changed: "M", removed: "D" };
   async function show(f) {
     for (const [p, b] of buttons) b.setAttribute("aria-current", String(p === f.path));
-    history.replaceState(null, "", "#/tool/" + encodeURIComponent(tool.ref) + "?tab=changes&file=" + encodeURIComponent(f.path));
+    history.replaceState(null, "", pageHash(tool) + "?tab=changes&file=" + encodeURIComponent(f.path));
     clear(view, h("p", { class: "muted" }, "Loading…"));
     let d;
-    try { d = await get(`/api/tool/diff?ref=${q(tool.ref)}&path=${q(f.path)}`); } catch (e) { return clear(view, h("p", { class: "notice" }, e.message)); }
+    try { d = await get(`/api/tool/diff?ref=${q(tool.ref)}&path=${q(f.path)}${kindQ(tool)}`); } catch (e) { return clear(view, h("p", { class: "notice" }, e.message)); }
     const head = h("div", { class: "diff-head" }, h("span", { class: "diff-status " + f.status }, f.status), h("code", null, f.path));
     if (d.binary) return clear(view, head, h("p", { class: "muted" }, `Binary file: ${bytes(d.old_size)} → ${bytes(d.new_size)}.`));
     if (d.too_large) return clear(view, head, h("p", { class: "muted" }, "This file is too large to compare here."));
@@ -1004,7 +1112,7 @@ async function loadChanges(tool, el, wanted) {
   const counts = ["changed", "added", "removed"].map((s) => [s, res.files.filter((f) => f.status === s).length]).filter(([, n]) => n);
   clear(el,
     h("div", { class: "tp-list" },
-      h("div", { class: "tp-list-head" }, h("h2", null, `Changes from v${res.of.version}`)),
+      h("div", { class: "tp-list-head" }, h("h2", null, res.of.version ? `Changes from v${res.of.version}` : "Changes")),
       h("p", { class: "muted diff-sum" }, counts.map(([s, n]) => `${n} ${s}`).join(", ")),
       list),
     view);

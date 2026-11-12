@@ -10,8 +10,6 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/nxnom/maggot/internal/manifest"
 )
 
 // Folders not worth listing file by file.
@@ -29,16 +27,16 @@ type toolFile struct {
 // apiToolFiles lists a tool's files for the read-only viewer. tool.json and
 // the entry file come first.
 func (s *Server) apiToolFiles(w http.ResponseWriter, r *http.Request) error {
-	_, t, err := s.resolve(r, "")
+	dir, first, entry, _, err := s.folderFor(r, "", isSkillReq(r))
 	if err != nil {
 		return err
 	}
 	var files []toolFile
-	filepath.WalkDir(t.Dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || p == t.Dir || len(files) >= 1000 {
+	filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || p == dir || len(files) >= 1000 {
 			return nil
 		}
-		rel, _ := filepath.Rel(t.Dir, p)
+		rel, _ := filepath.Rel(dir, p)
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
 			if skipDirs[d.Name()] {
@@ -58,9 +56,9 @@ func (s *Server) apiToolFiles(w http.ResponseWriter, r *http.Request) error {
 	})
 	rank := func(f toolFile) int {
 		switch {
-		case f.Path == manifest.FileName:
+		case f.Path == first:
 			return 0
-		case f.Path == t.Manifest.Entry.Path:
+		case entry != "" && f.Path == entry:
 			return 1
 		case f.Path == "README.md":
 			return 2
@@ -78,17 +76,17 @@ func (s *Server) apiToolFiles(w http.ResponseWriter, r *http.Request) error {
 	if files == nil {
 		files = []toolFile{}
 	}
-	return ok(w, map[string]any{"dir": t.Dir, "files": files})
+	return ok(w, map[string]any{"dir": dir, "files": files})
 }
 
 // apiToolFile returns one file's text. Binary and very large files are
 // reported instead of returned.
 func (s *Server) apiToolFile(w http.ResponseWriter, r *http.Request) error {
-	_, t, err := s.resolve(r, "")
+	dir, _, _, _, err := s.folderFor(r, "", isSkillReq(r))
 	if err != nil {
 		return err
 	}
-	p, err := insideDir(t.Dir, r.URL.Query().Get("path"))
+	p, err := insideDir(dir, r.URL.Query().Get("path"))
 	if err != nil {
 		return err
 	}
@@ -128,15 +126,15 @@ func trimPartialRune(b []byte) []byte {
 
 // apiOpenTool opens the tool folder in the file manager.
 func (s *Server) apiOpenTool(w http.ResponseWriter, r *http.Request) error {
-	var req struct{ Ref string }
+	var req struct{ Ref, Kind string }
 	if err := readJSON(r, &req); err != nil {
 		return err
 	}
-	_, t, err := s.resolve(r, req.Ref)
+	dir, _, _, _, err := s.folderFor(r, req.Ref, req.Kind == "skill")
 	if err != nil {
 		return err
 	}
-	if err := s.open(t.Dir, false); err != nil {
+	if err := s.open(dir, false); err != nil {
 		return err
 	}
 	return ok(w, map[string]bool{"ok": true})

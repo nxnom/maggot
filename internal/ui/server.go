@@ -192,6 +192,10 @@ func (s *Server) Handler() http.Handler {
 	api("DELETE /api/drafts", s.apiRemoveDraft)
 	api("GET /api/tool/changes", s.apiChanges)
 	api("GET /api/tool/diff", s.apiDiff)
+	api("GET /api/skill", s.apiSkill)
+	api("POST /api/skill/agents", s.apiSkillAgents)
+	api("POST /api/skill/secret", s.apiSetSkillSecret)
+	api("DELETE /api/skill/secret", s.apiDeleteSkillSecret)
 
 	return s.checkHost(mux)
 }

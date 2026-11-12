@@ -35,6 +35,9 @@ func Agents() []string {
 	return out
 }
 
+// AgentsInOrder lists the agents with the most used first, for display.
+func AgentsInOrder() []string { return []string{"claude", "codex", "agents"} }
+
 // Path returns where the skill file goes for agent under base (home or project).
 func Path(base, agent string) (string, error) {
 	rel, ok := targets[agent]

@@ -157,6 +157,17 @@ func (s *Server) apiAddDraft(w http.ResponseWriter, r *http.Request) error {
 // folder (the UI asks first). Folders elsewhere are never deleted.
 func (s *Server) apiRemoveDraft(w http.ResponseWriter, r *http.Request) error {
 	ref := r.URL.Query().Get("ref")
+	if isSkillReq(r) {
+		for _, d := range s.skillDrafts() {
+			if d.Ref == ref {
+				if err := os.RemoveAll(d.Path); err != nil {
+					return err
+				}
+				return ok(w, map[string]string{"deleted": d.Path})
+			}
+		}
+		return &httpError{code: http.StatusNotFound, msg: "no skill draft " + ref}
+	}
 	for _, d := range s.drafts() {
 		if d.Ref != ref {
 			continue

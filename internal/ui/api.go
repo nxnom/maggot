@@ -21,6 +21,7 @@ import (
 	"github.com/nxnom/maggot/internal/pack"
 	"github.com/nxnom/maggot/internal/runner"
 	"github.com/nxnom/maggot/internal/search"
+	"github.com/nxnom/maggot/internal/skill"
 	"github.com/nxnom/maggot/internal/testlog"
 	"github.com/nxnom/maggot/internal/toolbox"
 	"github.com/nxnom/maggot/internal/warm"
@@ -114,10 +115,12 @@ func (s *Server) apiState(w http.ResponseWriter, r *http.Request) error {
 	}
 	home, _ := os.UserHomeDir()
 	draftsDir, _ := config.DraftsDir()
+	skills, skillDrafts := s.skillState(ws)
 	return ok(w, map[string]any{
 		"version": s.Version, "config_path": ws.Config.Path(), "data_dir": s.data, "home": home,
 		"selected": s.Selector != "", "toolboxes": boxes, "tools": rows, "problems": ws.AllProblems(),
 		"drafts": drafts, "drafts_dir": draftsDir, "warm": warmNow,
+		"skills": skills, "skill_drafts": skillDrafts,
 	})
 }
 
@@ -296,7 +299,12 @@ func (s *Server) apiSearch(w http.ResponseWriter, r *http.Request) error {
 			closest = append(closest, t.Ref())
 		}
 	}
-	return ok(w, map[string]any{"refs": refs, "closest": closest})
+	skills, _ := ws.Set.Skills()
+	skillRefs := []string{}
+	for _, h := range search.RankSkills(skills, q) {
+		skillRefs = append(skillRefs, h.Skill.Ref())
+	}
+	return ok(w, map[string]any{"refs": refs, "closest": closest, "skills": skillRefs})
 }
 
 func (s *Server) resolve(r *http.Request, ref string) (*workspace.Workspace, *toolbox.Tool, error) {
@@ -356,6 +364,22 @@ func (s *Server) apiTool(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) apiRemoveTool(w http.ResponseWriter, r *http.Request) error {
 	if isDraftRef(r.URL.Query().Get("ref")) {
 		return errors.New("use the draft's Remove button")
+	}
+	if isSkillReq(r) {
+		_, sk, _, err := s.resolveSkill(r.URL.Query().Get("ref"))
+		if err != nil {
+			return err
+		}
+		// Links in agents' skills folders would break; remove them too.
+		if home, err := os.UserHomeDir(); err == nil {
+			for _, ag := range skill.Agents() {
+				skill.Unlink(home, ag, sk.Meta.Name, sk.Dir, false)
+			}
+		}
+		if err := os.RemoveAll(sk.Dir); err != nil {
+			return err
+		}
+		return ok(w, map[string]string{"removed": sk.Ref()})
 	}
 	_, t, err := s.resolve(r, "")
 	if err != nil {
@@ -521,19 +545,32 @@ func shellJoin(args []string) string {
 }
 
 func (s *Server) apiExport(w http.ResponseWriter, r *http.Request) error {
-	_, t, err := s.resolve(r, "")
-	if err != nil {
-		return err
-	}
 	tmp, err := os.MkdirTemp("", "maggot-export-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	name := pack.FileName(t.Manifest)
-	out := filepath.Join(tmp, name)
-	if _, err := pack.Pack(t.Dir, out); err != nil {
-		return err
+	var name, out string
+	if isSkillReq(r) {
+		_, sk, _, err := s.resolveSkill(r.URL.Query().Get("ref"))
+		if err != nil {
+			return err
+		}
+		name = pack.SkillFileName(sk.Skill)
+		out = filepath.Join(tmp, name)
+		if _, err := pack.PackSkill(sk.Dir, out); err != nil {
+			return err
+		}
+	} else {
+		_, t, err := s.resolve(r, "")
+		if err != nil {
+			return err
+		}
+		name = pack.FileName(t.Manifest)
+		out = filepath.Join(tmp, name)
+		if _, err := pack.Pack(t.Dir, out); err != nil {
+			return err
+		}
 	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
 	w.Header().Set("Content-Type", "application/zip")
@@ -619,13 +656,13 @@ func (s *Server) apiImportCommit(w http.ResponseWriter, r *http.Request) error {
 	}
 	if st.staged.NeedsForce() && !req.Force {
 		st.staged.Discard()
-		return fmt.Errorf("%s %s is already installed; confirm to %s", st.staged.Manifest.ID, st.staged.Existing, st.staged.Action)
+		return fmt.Errorf("%s %s is already installed; confirm to %s", st.staged.ID, st.staged.Existing, st.staged.Action)
 	}
 	if err := st.staged.Commit(); err != nil {
 		st.staged.Discard()
 		return err
 	}
-	return ok(w, map[string]string{"ref": st.toolbox + "/" + st.staged.Manifest.ID, "action": st.staged.Action})
+	return ok(w, map[string]string{"ref": st.toolbox + "/" + st.staged.ID, "action": st.staged.Action, "kind": st.staged.Kind})
 }
 
 func (s *Server) apiImportDiscard(w http.ResponseWriter, r *http.Request) error {
