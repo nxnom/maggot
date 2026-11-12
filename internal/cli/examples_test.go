@@ -21,10 +21,10 @@ func TestExampleToolsAreValid(t *testing.T) {
 	abs := examplesToolbox(t)
 	isolate(t)
 	code, out, errOut := run(t, "--toolbox", abs, "list")
-	if code != 0 || strings.Contains(errOut, "warning") || !strings.Contains(out, "examples/youtube-download") {
+	if code != 0 || strings.Contains(errOut, "warning") || !strings.Contains(out, "examples/media-download") {
 		t.Fatalf("code=%d out=%s err=%s", code, out, errOut)
 	}
-	code, out, _ = run(t, "--toolbox", abs, "run", "--dry-run", "youtube-download",
+	code, out, _ = run(t, "--toolbox", abs, "run", "--dry-run", "media-download",
 		"--inputs", `{"urls":["https://x"],"mode":"mp3","max_height":"720"}`)
 	want := "yt-dlp --newline --no-playlist -o '%(title)s.%(ext)s' -x --audio-format mp3 -S res:720 https://x"
 	if code != 0 || strings.TrimSpace(out) != want {
@@ -38,7 +38,7 @@ func TestExampleYouTubeDownload(t *testing.T) {
 			t.Skipf("%s not installed", bin)
 		}
 	}
-	dir := filepath.Join(examplesToolbox(t), "tools", "youtube-download")
+	dir := filepath.Join(examplesToolbox(t), "tools", "media-download")
 	isolate(t)
 	code, out, _ := run(t, "test", dir)
 	if code != 0 || !strings.Contains(out, "4/4 cases passed") {

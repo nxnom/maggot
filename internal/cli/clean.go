@@ -44,7 +44,7 @@ space it uses. With a kind, delete it (asks first; --yes to skip):
 Toolboxes and your projects are never touched. Runs still in progress are kept.`,
 		Example: `  maggot clean
   maggot clean runs --older-than 7d
-  maggot clean runs --tool youtube-download
+  maggot clean runs --tool media-download
   maggot clean drafts photo-tidy --yes`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

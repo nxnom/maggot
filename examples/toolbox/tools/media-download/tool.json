@@ -1,11 +1,11 @@
 {
   "schema": 1,
-  "id": "youtube-download",
-  "version": "1.0.0",
-  "name": "YouTube Download",
-  "description": "Download video or audio from YouTube and 1000+ other sites with yt-dlp.",
+  "id": "media-download",
+  "version": "1.1.0",
+  "name": "Media Download",
+  "description": "Download video or audio from YouTube, Vimeo, X/Twitter, TikTok, SoundCloud and 1000+ other sites with yt-dlp.",
   "categories": ["Video", "Audio", "Downloads"],
-  "tags": ["yt-dlp", "youtube", "video", "audio", "mp3", "mp4", "m4a", "playlist", "download", "vimeo", "twitter"],
+  "tags": ["yt-dlp", "youtube", "video", "audio", "mp3", "mp4", "m4a", "playlist", "download", "vimeo", "twitter", "tiktok", "instagram", "soundcloud", "twitch"],
   "entry": {
     "bin": "yt-dlp",
     "args": ["--newline", "--no-playlist", "-o", "%(title)s.%(ext)s"]
@@ -54,8 +54,8 @@
     "progress": {"regex": "\\[download\\]\\s+([\\d.]+)%"}
   },
   "examples": [
-    "maggot run youtube-download -- 'https://www.youtube.com/watch?v=ID'",
-    "maggot run youtube-download -- -x --audio-format mp3 -P ~/Music 'https://www.youtube.com/watch?v=ID'",
-    "maggot run youtube-download --inputs '{\"urls\": [\"https://youtu.be/ID\"], \"mode\": \"mp3\"}'"
+    "maggot run media-download -- 'https://www.youtube.com/watch?v=ID'",
+    "maggot run media-download -- -x --audio-format mp3 -P ~/Music 'https://www.youtube.com/watch?v=ID'",
+    "maggot run media-download --inputs '{\"urls\": [\"https://youtu.be/ID\"], \"mode\": \"mp3\"}'"
   ]
 }

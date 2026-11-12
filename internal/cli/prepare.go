@@ -63,8 +63,8 @@ func (a *app) prepareCmd() *cobra.Command {
 defaults), missing binaries or env vars (with how to fix them), where output
 goes, whether the tool is warm, the exact command it will run, and the
 'maggot run' command to use next. Exit code 1 when something must be fixed.`,
-		Example: `  maggot prepare youtube-download --inputs '{"urls":["https://youtu.be/ID"],"mode":"mp3"}' --out ./audio --json
-  maggot prepare youtube-download --json -- -x --audio-format mp3 URL`,
+		Example: `  maggot prepare media-download --inputs '{"urls":["https://youtu.be/ID"],"mode":"mp3"}' --out ./audio --json
+  maggot prepare media-download --json -- -x --audio-format mp3 URL`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := a.loadEnv()

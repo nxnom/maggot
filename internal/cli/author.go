@@ -80,7 +80,7 @@ Pick the simplest kind that works:
   sh      small glue around existing programs
   python  real logic or libraries (uv installs inline dependencies)
   deno    real logic or libraries in TypeScript (npm:/jsr: imports)`,
-		Example: `  maggot new youtube-download --lang bin --bin yt-dlp --dir /tmp/work
+		Example: `  maggot new media-download --lang bin --bin yt-dlp --dir /tmp/work
   maggot new image-resize --lang python --dir /tmp/work`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

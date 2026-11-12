@@ -1,4 +1,6 @@
-# YouTube Download
+# Media Download
+
+Downloads from YouTube and 1000+ other sites that yt-dlp supports.
 
 A manifest-only tool: it runs the `yt-dlp` you have installed, with good
 defaults. All yt-dlp options still work.
@@ -8,10 +10,10 @@ so `--yes-playlist` or your own `-o` override them.
 
 ## Usage
 
-    maggot run youtube-download -- 'https://youtu.be/ID'                       # best video, into the current folder
-    maggot run youtube-download -- -x --audio-format mp3 -P ~/Music 'URL'      # MP3
-    maggot run youtube-download -- -S res:720 'URL'                            # up to 720p
-    maggot run youtube-download -- --cookies-from-browser chrome 'URL'         # private / age-restricted
+    maggot run media-download -- 'https://youtu.be/ID'                       # best video, into the current folder
+    maggot run media-download -- -x --audio-format mp3 -P ~/Music 'URL'      # MP3
+    maggot run media-download -- -S res:720 'URL'                            # up to 720p
+    maggot run media-download -- --cookies-from-browser chrome 'URL'         # private / age-restricted
 
 Without maggot, run `yt-dlp` with the same flags.
 
