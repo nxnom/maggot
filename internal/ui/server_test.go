@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -688,4 +689,52 @@ func TestPresetsOverHTTP(t *testing.T) {
 	if len(res.Presets) != 0 {
 		t.Fatalf("delete: %+v", res)
 	}
+}
+
+// Secrets are stored by tool id, so a secret saved while trying a draft is
+// there for the installed tool after import.
+func TestSecretsCarryOverFromDraft(t *testing.T) {
+	ts := newTestServer(t)
+	draftsDir := filepath.Join(os.Getenv("MAGGOT_DATA_DIR"), "drafts")
+	dir := filepath.Join(draftsDir, "api-tool")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "tool.json"), []byte(`{"schema":1,"id":"api-tool","version":"0.1.0","name":"API","description":"d",
+	  "entry":{"path":"run"},"env":[{"name":"API_KEY","secret":true,"required":true}]}`), 0o644)
+	os.WriteFile(filepath.Join(dir, "run"), []byte("#!/bin/sh\necho \"key=$API_KEY\"\n"), 0o755)
+
+	ts.do(t, "POST", "/api/tool/secret", map[string]any{"ref": "draft/api-tool", "name": "API_KEY", "value": "s3cret"}, 200, nil)
+
+	var staged struct{ Token string }
+	ts.do(t, "POST", "/api/import", map[string]any{"path": dir}, 200, &staged)
+	ts.do(t, "POST", "/api/import/"+staged.Token, map[string]any{}, 200, nil)
+
+	var tool struct {
+		Env []struct {
+			Name, Source string
+			Set          bool
+		}
+	}
+	ts.do(t, "GET", "/api/tool?ref=t/api-tool", nil, 200, &tool)
+	if len(tool.Env) != 1 || !tool.Env[0].Set || tool.Env[0].Source != "store" {
+		t.Fatalf("installed tool should see the secret: %+v", tool)
+	}
+	// And it reaches the program when run.
+	var meta RunMeta
+	ts.do(t, "POST", "/api/runs", map[string]any{"ref": "t/api-tool"}, 200, &meta)
+	if r, _ := ts.s.runs.Active(meta.ID); r != nil {
+		<-r.Done()
+	}
+	if out := ts.s.runs.stdoutText(meta); out != "key=s3cret\n" {
+		t.Fatalf("run output %q", out)
+	}
+	// The secret never lands in the tool folder.
+	installed := filepath.Join(ts.tb, "tools", "api-tool")
+	filepath.WalkDir(installed, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			if b, _ := os.ReadFile(p); strings.Contains(string(b), "s3cret") {
+				t.Errorf("secret found in %s", p)
+			}
+		}
+		return nil
+	})
 }

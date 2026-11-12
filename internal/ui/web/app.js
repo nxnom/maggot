@@ -870,7 +870,8 @@ function renderSecrets(tool, el) {
   clear(el, h("div", { class: "panel" },
     h("div", { class: "panel-head" }, h("h2", null, "Secrets")),
     h("div", { class: "panel-body" },
-      h("p", { class: "muted", style: "margin:0 0 10px;font-size:13.5px" }, "Saved in your system keychain, never in the toolbox."),
+      h("p", { class: "muted", style: "margin:0 0 10px;font-size:13.5px;max-width:70ch" },
+        "Saved in your system keychain, never in the tool folder or the toolbox. They are stored by tool id, so a draft and the installed tool share them. The tool gets them as environment variables when it runs; tests get them only for network or paid cases."),
       secrets.map((s) => {
         const box = h("input", { class: "input mono", type: "password", autocomplete: "off", "aria-label": s.name, placeholder: s.set ? "Saved. Type to replace." : "Not set" });
         const save = h("button", { class: "btn small", type: "button" }, "Save");
