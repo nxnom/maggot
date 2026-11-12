@@ -635,6 +635,7 @@ async function toolPage(spec) {
     panelEls[id] = h("section", { class: "tp-panel tp-panel-" + id, role: "tabpanel", id: "panel-" + id, "aria-labelledby": "tab-" + id, hidden: true }, panels[id]);
   }
   let current = null;
+  let historyReady = false; // the run list has loaded
   const loaded = {};
   function setURL(extra) {
     const p = new URLSearchParams();
@@ -653,6 +654,7 @@ async function toolPage(spec) {
       panelEls[tid].hidden = !on;
     }
     if (id === "code" && !loaded.code) { loaded.code = true; loadFiles(tool, files, params.get("file")); }
+    if (id === "history" && !loaded.history && historyReady) { loaded.history = true; openHistory(); }
     if (id === "changes" && !loaded.changes) { loaded.changes = true; loadChanges(tool, changes, params.get("file")); }
     if (id === "settings" && !loaded.settings) { loaded.settings = true; renderSecrets(tool, secrets); }
     setURL(id === "history" && historyActive ? { run: historyActive } : null);
@@ -667,8 +669,13 @@ async function toolPage(spec) {
   const runs = await loadHistory();
   // The result pane opens on the latest run, so the last result is right there.
   if (runs.length) runView.show(runs[0].id).catch(() => {});
-  if (historyActive) historyView.show(historyActive).catch(() => {});
-  else if (runs.length) { historyActive = runs[0].id; historyView.show(runs[0].id).catch(() => {}); loadHistory(); }
+  // The History tab loads its run only when it is opened.
+  function openHistory() {
+    if (historyActive) historyView.show(historyActive).catch(() => {});
+    else if (runs.length) { historyActive = runs[0].id; historyView.show(runs[0].id).catch(() => {}); loadHistory(); }
+  }
+  historyReady = true;
+  if (current === "history") { loaded.history = true; openHistory(); }
   checkHealth(tool, reqs);
 }
 

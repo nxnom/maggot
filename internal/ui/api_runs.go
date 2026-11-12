@@ -160,6 +160,7 @@ func (s *Server) apiStream(w http.ResponseWriter, r *http.Request) error {
 		return errors.New("streaming not supported")
 	}
 	send := func(m Message) {
+		m.Text = clipLine(m.Text)
 		b, _ := json.Marshal(m)
 		fmt.Fprintf(w, "data: %s\n\n", b)
 	}
@@ -181,18 +182,41 @@ func (s *Server) apiStream(w http.ResponseWriter, r *http.Request) error {
 			// follow its log file until it ends.
 			return s.followFile(r, id, send, flusher)
 		}
-		log, _ := s.runs.Log(id)
-		for _, m := range log {
-			send(m)
+		if t, err := s.runs.LogTail(id, streamTail); err == nil {
+			sendTail(send, t)
 		}
-		send(Message{Seq: len(log) + 1, Type: "status", Status: &meta})
+		send(Message{Type: "status", Status: &meta})
 		flusher.Flush()
 		return nil
 	}
 	hist, ch, stop := run.Subscribe()
 	defer stop()
 	start()
+	lines, progress := 0, -1.0
 	for _, m := range hist {
+		switch m.Type {
+		case "out", "err":
+			lines++
+		case "progress":
+			progress = m.Value
+		}
+	}
+	// Replay only the last streamTail output lines and the last progress.
+	skip := max(0, lines-streamTail)
+	if skip > 0 {
+		send(Message{Type: "skipped", Value: float64(skip)})
+	}
+	if progress >= 0 {
+		send(Message{Type: "progress", Value: progress})
+	}
+	for _, m := range hist {
+		switch {
+		case m.Type == "progress":
+			continue
+		case (m.Type == "out" || m.Type == "err") && skip > 0:
+			skip--
+			continue
+		}
 		send(m)
 	}
 	flusher.Flush()
@@ -231,7 +255,11 @@ func (s *Server) apiStream(w http.ResponseWriter, r *http.Request) error {
 
 // followFile streams a run that another process writes, by polling its log.
 func (s *Server) followFile(r *http.Request, id string, send func(Message), flusher http.Flusher) error {
-	sent := 0
+	var off int64
+	if t, err := s.runs.LogTail(id, streamTail); err == nil {
+		sendTail(send, t)
+		off = t.Offset
+	}
 	tick := time.NewTicker(300 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -239,11 +267,11 @@ func (s *Server) followFile(r *http.Request, id string, send func(Message), flus
 		if err != nil {
 			return nil
 		}
-		log, _ := s.runs.Log(id)
-		for _, m := range log[min(sent, len(log)):] {
+		var msgs []Message
+		msgs, off, _ = s.runs.LogFrom(id, off)
+		for _, m := range msgs {
 			send(m)
 		}
-		sent = max(sent, len(log))
 		if meta.Status != StatusRunning {
 			send(Message{Type: "status", Status: &meta})
 			flusher.Flush()
@@ -256,6 +284,49 @@ func (s *Server) followFile(r *http.Request, id string, send func(Message), flus
 			return nil
 		}
 	}
+}
+
+// streamTail is how many earlier output lines a stream replays. Older lines
+// are in the full log (GET /api/runs/{id}/log.txt).
+const streamTail = 1000
+
+func sendTail(send func(Message), t *LogTail) {
+	if skipped := t.Total - len(t.Lines); skipped > 0 {
+		send(Message{Type: "skipped", Value: float64(skipped)})
+	}
+	if t.Progress >= 0 {
+		send(Message{Type: "progress", Value: t.Progress})
+	}
+	for _, m := range t.Lines {
+		send(m)
+	}
+}
+
+// apiRunLog returns the last lines of a run's log (?tail=N, default 1000).
+func (s *Server) apiRunLog(w http.ResponseWriter, r *http.Request) error {
+	n := streamTail
+	if v, err := strconv.Atoi(r.URL.Query().Get("tail")); err == nil && v >= 0 {
+		n = min(v, maxHistory)
+	}
+	t, err := s.runs.LogTail(r.PathValue("id"), n)
+	if err != nil {
+		return err
+	}
+	if t.Lines == nil {
+		t.Lines = []Message{}
+	}
+	return ok(w, t)
+}
+
+// apiRunLogText serves the whole log as plain text, for a browser tab.
+func (s *Server) apiRunLogText(w http.ResponseWriter, r *http.Request) error {
+	id := r.PathValue("id")
+	if _, err := s.runs.Get(id); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	return s.runs.WriteLogText(id, w)
 }
 
 // insideDir resolves rel inside dir and refuses anything that escapes it,

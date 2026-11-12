@@ -1,10 +1,11 @@
 // The run panel: live status, progress, output lines, result files.
 import { h, clear, bytes, duration, toast, confirmDialog } from "./dom.js";
-import { get, post, fileURL } from "./api.js";
+import { get, post } from "./api.js";
 import { pick } from "./picker.js";
 import { renderOutputs } from "./viewer.js";
 
-const MAX_LINES = 2000;
+const MAX_LINES = 2000; // lines kept in the page; the full log opens in a new tab
+const TAIL = 1000;      // lines loaded for a finished run
 
 export class RunView {
   constructor({ onFinish, onReuse, onTaken, emptyText }) {
@@ -43,9 +44,11 @@ export class RunView {
     const log = h("pre", { class: "log", tabindex: "0", "aria-label": "Output" });
     const logCount = h("span", { class: "log-count" });
     // Results first; the log is a section you open when you need it.
-    const logBox = h("details", { class: "log-box", open: true }, h("summary", null, "Log", logCount), log);
+    const fullLog = h("a", { class: "log-full", href: `/api/runs/${id}/log.txt`, target: "_blank", rel: "noopener" }, "Open full log");
+    const logNote = h("p", { class: "muted log-note", hidden: true });
+    const logBox = h("details", { class: "log-box", open: true }, h("summary", null, "Log", logCount), logNote, log, fullLog);
     const results = h("div", { class: "results" });
-    this.parts = { status, time, cancel, meter, log, logBox, logCount, results };
+    this.parts = { status, time, cancel, meter, log, logBox, logCount, logNote, results };
     clear(this.el,
       h("div", { class: "panel-head" }, h("h2", null, "Run"), status, time, cancel,
         h("span", { class: "run-actions" }, reveal, reuse)),
@@ -63,31 +66,84 @@ export class RunView {
     this.lines = 0;
     this.setStatus(this.meta);
     if (this.meta.status !== "running") {
-      // Finished run: replay output, then show results.
-      this.stream(id, true);
+      // Finished run: results right away; the log loads only when opened.
+      this.showResults(id);
+      const { logBox } = this.parts;
+      const load = () => { if (logBox.open && !this.logLoaded) { this.logLoaded = true; this.loadLog(id); } };
+      this.logLoaded = false;
+      logBox.addEventListener("toggle", load);
+      load();
       return;
     }
     this.timer = setInterval(() => { time.textContent = duration(this.meta.started); }, 500);
     this.stream(id, false);
   }
 
+  // loadLog shows the last lines of a finished run's log in one go.
+  async loadLog(id) {
+    const { log, logCount, logNote } = this.parts;
+    log.textContent = "Loading…";
+    let t;
+    try { t = await get(`/api/runs/${id}/log?tail=${TAIL}`); } catch (e) { log.textContent = e.message; return; }
+    if (this.id !== id) return;
+    const frag = document.createDocumentFragment();
+    for (const m of t.lines) frag.append(m.type === "err" ? h("span", { class: "err" }, m.text + "\n") : m.text + "\n");
+    log.textContent = "";
+    log.append(frag);
+    this.lines = t.total;
+    logCount.textContent = `${t.total} line${t.total === 1 ? "" : "s"}`;
+    if (t.total > t.lines.length) {
+      logNote.hidden = false;
+      logNote.textContent = `Showing the last ${t.lines.length} of ${t.total} lines.`;
+    }
+    log.scrollTop = log.scrollHeight;
+  }
+
   stream(id, finished) {
     const src = new EventSource(`/api/runs/${id}/stream`);
     this.source = src;
-    const { log } = this.parts;
+    const { log, logCount, logNote } = this.parts;
     let stick = true;
     log.addEventListener("scroll", () => { stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8; });
+    // Lines arrive fast; add them to the page once per frame, not one by one.
+    let pending = [];
+    let skipped = 0;
+    let frame = 0;
+    const flush = () => {
+      frame = 0;
+      if (!pending.length) return;
+      const frag = document.createDocumentFragment();
+      for (const m of pending.slice(-MAX_LINES)) frag.append(m.type === "err" ? h("span", { class: "err" }, m.text + "\n") : m.text + "\n");
+      pending = [];
+      log.append(frag);
+      let extra = log.childNodes.length - MAX_LINES;
+      if (extra > 0) {
+        const range = document.createRange();
+        range.setStartBefore(log.firstChild);
+        range.setEndAfter(log.childNodes[extra - 1]);
+        range.deleteContents();
+        skipped += extra;
+      }
+      logCount.textContent = `${this.lines} line${this.lines === 1 ? "" : "s"}`;
+      if (skipped > 0) {
+        logNote.hidden = false;
+        logNote.textContent = `Showing the last ${MAX_LINES} lines; ${skipped} earlier lines are in the full log.`;
+      }
+      if (stick) log.scrollTop = log.scrollHeight;
+    };
     src.onmessage = (e) => {
       const m = JSON.parse(e.data);
       if (m.type === "out" || m.type === "err") {
         this.lines++;
-        this.parts.logCount.textContent = `${this.lines} line${this.lines === 1 ? "" : "s"}`;
-        log.append(m.type === "err" ? h("span", { class: "err" }, m.text + "\n") : m.text + "\n");
-        while (log.childNodes.length > MAX_LINES) log.firstChild.remove();
-        if (stick) log.scrollTop = log.scrollHeight;
+        pending.push(m);
+        if (!frame) frame = requestAnimationFrame(flush);
+      } else if (m.type === "skipped") {
+        this.lines += m.value;
+        skipped += m.value;
       } else if (m.type === "progress") {
         this.setProgress(m.value);
       } else if (m.type === "status" && m.status) {
+        flush();
         this.meta = m.status;
         this.setStatus(m.status);
         if (m.status.status !== "running") {

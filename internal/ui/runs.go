@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nxnom/maggot/internal/config"
 	"github.com/nxnom/maggot/internal/runner"
@@ -598,35 +599,158 @@ func (m *Manager) List(toolID string, limit int) []RunMeta {
 
 // Log replays the saved output lines of a finished run.
 func (m *Manager) Log(id string) ([]Message, error) {
-	if !runIDPattern.MatchString(id) {
-		return nil, fs.ErrNotExist
+	t, err := m.LogTail(id, maxHistory)
+	if err != nil {
+		return nil, err
 	}
-	f, err := os.Open(filepath.Join(m.Root, id, "log.ndjson"))
+	return t.Lines, nil
+}
+
+// maxLineChars cuts very long output lines when they are shown. The log
+// file keeps them whole.
+const maxLineChars = 2000
+
+func clipLine(s string) string {
+	if len(s) <= maxLineChars {
+		return s
+	}
+	cut := s[:maxLineChars]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return fmt.Sprintf("%s … (%d more characters)", cut, len(s)-len(cut))
+}
+
+// parseLogLine reads one log.ndjson line.
+func parseLogLine(b []byte) (Message, bool) {
+	var l struct {
+		T, S string
+		V    float64
+	}
+	if json.Unmarshal(b, &l) != nil {
+		return Message{}, false
+	}
+	if l.T == "p" {
+		return Message{Type: "progress", Value: l.V}, true
+	}
+	return Message{Type: l.T, Text: clipLine(l.S)}, true
+}
+
+// LogTail is the end of a run's log.
+type LogTail struct {
+	Lines    []Message `json:"lines"`    // the last output lines (out, err)
+	Total    int       `json:"total"`    // output lines in the whole log
+	Progress float64   `json:"progress"` // last progress value, -1 if none
+	Offset   int64     `json:"-"`        // file offset after the last complete line
+}
+
+func (m *Manager) logPath(id string) (string, error) {
+	if !runIDPattern.MatchString(id) {
+		return "", fs.ErrNotExist
+	}
+	return filepath.Join(m.Root, id, "log.ndjson"), nil
+}
+
+// LogTail reads the last n output lines of a run's log. It reads the file
+// once and keeps only n lines in memory, so huge logs stay cheap.
+func (m *Manager) LogTail(id string, n int) (*LogTail, error) {
+	p, err := m.logPath(id)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(p)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	var out []Message
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
-	for sc.Scan() {
-		var l struct {
-			T, S string
-			V    float64
+	t := &LogTail{Progress: -1}
+	ring := make([]Message, 0, min(n, 1024))
+	start := 0 // ring is full once len(ring) == n; start is the oldest line
+	rd := bufio.NewReaderSize(f, 64<<10)
+	for {
+		b, err := rd.ReadBytes('\n')
+		if err != nil {
+			break // EOF, or a line still being written
 		}
-		if json.Unmarshal(sc.Bytes(), &l) != nil {
+		t.Offset += int64(len(b))
+		msg, ok := parseLogLine(b)
+		if !ok {
 			continue
 		}
-		if l.T == "p" {
-			out = append(out, Message{Seq: len(out) + 1, Type: "progress", Value: l.V})
+		if msg.Type == "progress" {
+			t.Progress = msg.Value
+			continue
+		}
+		t.Total++
+		if n <= 0 {
+			continue
+		}
+		if len(ring) < n {
+			ring = append(ring, msg)
 		} else {
-			out = append(out, Message{Seq: len(out) + 1, Type: l.T, Text: l.S})
+			ring[start] = msg
+			start = (start + 1) % n
 		}
 	}
-	if len(out) > maxHistory {
-		out = out[len(out)-maxHistory:]
+	t.Lines = append(ring[start:], ring[:start]...)
+	for i := range t.Lines {
+		t.Lines[i].Seq = t.Total - len(t.Lines) + i + 1
 	}
-	return out, nil
+	return t, nil
+}
+
+// LogFrom reads the complete log lines written after offset off.
+func (m *Manager) LogFrom(id string, off int64) ([]Message, int64, error) {
+	p, err := m.logPath(id)
+	if err != nil {
+		return nil, off, err
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return nil, off, err
+	}
+	defer f.Close()
+	if _, err := f.Seek(off, io.SeekStart); err != nil {
+		return nil, off, err
+	}
+	var out []Message
+	rd := bufio.NewReaderSize(f, 64<<10)
+	for len(out) < maxHistory {
+		b, err := rd.ReadBytes('\n')
+		if err != nil {
+			break
+		}
+		off += int64(len(b))
+		if msg, ok := parseLogLine(b); ok {
+			out = append(out, msg)
+		}
+	}
+	return out, off, nil
+}
+
+// WriteLogText writes the whole log as plain text.
+func (m *Manager) WriteLogText(id string, w io.Writer) error {
+	p, err := m.logPath(id)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	bw := bufio.NewWriterSize(w, 64<<10)
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
+	for sc.Scan() {
+		var l struct{ T, S string }
+		if json.Unmarshal(sc.Bytes(), &l) != nil || l.T == "p" {
+			continue
+		}
+		bw.WriteString(l.S)
+		bw.WriteByte('\n')
+	}
+	return bw.Flush()
 }
 
 // Cancel stops a running run.

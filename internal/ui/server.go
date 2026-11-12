@@ -174,6 +174,8 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/runs/{id}/cancel", s.apiCancelRun)
 	api("POST /api/runs/{id}/take", s.apiTakeRun)
 	api("GET /api/runs/{id}/stream", s.apiStream)
+	api("GET /api/runs/{id}/log", s.apiRunLog)
+	api("GET /api/runs/{id}/log.txt", s.apiRunLogText)
 	api("GET /api/runs/{id}/files/{path...}", s.apiRunFile)
 	api("POST /api/reveal", s.apiReveal)
 	api("POST /api/drafts", s.apiAddDraft)
