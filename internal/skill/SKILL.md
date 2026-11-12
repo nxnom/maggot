@@ -78,7 +78,34 @@ Propose the change first and wait for approval (step 1 below). Then
    - the inputs (options in the form) with defaults and choices
    - the outputs: what files or text it produces, and where
    - how it will be tested (offline fixtures; what is marked network or paid)
+   - the decisions below that apply to this tool, each with your
+     recommendation and the reason, so the user only has to say yes or
+     change one
    - open questions, each with your suggested answer
+
+   Decisions to cover when they apply (skip the ones that don't):
+   - **Speed and memory:** how long one run takes, and how long loading takes
+     (models, big libraries). If loading is slow: should it support warm
+     (`--warm`), keep it warm by default (`warm.default_on`), and for how many
+     minutes (`warm.minutes`)? Say how much memory or GPU memory it holds
+     while warm, and recommend minutes from how the user will use it (one
+     run now and then: no warm; batches: 10–15 min).
+   - **Cost and limits:** paid APIs, credits, rate limits, size or length
+     limits, and what a typical run costs.
+   - **Secrets:** which API keys or tokens (`env` with `"secret": true`) and
+     where the user gets them.
+   - **Requirements:** programs and version ranges, how to install them
+     (brew, apt, uv, npm), big downloads (models) and where they are stored.
+   - **Defaults:** quality, format, size, language, voice, and which options
+     stay in the main form and which go under advanced.
+   - **Input shapes:** single file or many files or a folder, text or a text
+     file (`one_of`), overwrite in place or write new files.
+   - **Output:** file names and formats, the output folder flag, progress
+     reporting for long runs.
+   - **Presets:** settings the user will reuse (a voice, a style) that should
+     be saved as presets, personal or shared in the toolbox.
+   - **Platform:** macOS only, or Linux and Windows too; GPU (CUDA, Apple MPS)
+     or CPU.
 
    Change the plan from the user's feedback and ask again if it changed a lot.
    Build only after a clear yes ("ok", "go ahead", "build it"). Skip the

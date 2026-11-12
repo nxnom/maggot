@@ -11,7 +11,10 @@ program must run without maggot.
    second similar tool.
 2. Propose before building: tell the user what the tool will do, its kind and
    requirements, inputs, outputs and how it is tested, with your open
-   questions. Wait for their approval; do not create files before that.
+   questions. Include a recommendation for each decision that applies:
+   warm support and minutes (with the memory it holds), cost and limits,
+   secrets, defaults, input shapes, presets and platforms (the skill has the
+   full list). Wait for their approval; do not create files before that.
 3. Pick the simplest kind (see "Choosing the kind of tool") and scaffold:
    `maggot new <id> --lang bin|sh|python|deno [--bin <program>]`. It goes into
    the maggot drafts folder (`<data dir>/drafts/<id>`; `--dir` picks another
