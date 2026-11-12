@@ -24,6 +24,16 @@ type Record struct {
 	Skipped int       `json:"skipped"`
 	Error   string    `json:"error,omitempty"` // manifest/requirements/no tests
 	At      time.Time `json:"at"`
+	// Cases says what was actually tested, so an agent can tell whether the
+	// capability it needs was covered.
+	Cases []Case `json:"cases,omitempty"`
+}
+
+// Case is the result of one test case.
+type Case struct {
+	Name   string `json:"name"`
+	Status string `json:"status"` // passed, failed, skipped
+	Reason string `json:"reason,omitempty"`
 }
 
 func path() (string, error) {

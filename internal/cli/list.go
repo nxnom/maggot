@@ -141,6 +141,16 @@ func (a *app) infoCmd() *cobra.Command {
 			fmt.Fprintf(a.stdout, "%s %s — %s\n%s\n\n", t.Ref(), m.Version, m.Name, m.Description)
 			fmt.Fprintf(a.stdout, "dir:     %s\n", t.Dir)
 			fmt.Fprintf(a.stdout, "tested:  %s\n", testedLine(last, m.Version))
+			if last != nil && last.Version == m.Version {
+				for _, c := range last.Cases {
+					mark := map[string]string{"passed": "✓", "failed": "✗", "skipped": "-"}[c.Status]
+					reason := ""
+					if c.Reason != "" {
+						reason = " (" + c.Reason + ")"
+					}
+					fmt.Fprintf(a.stdout, "         %s %s%s\n", mark, c.Name, reason)
+				}
+			}
 			fmt.Fprintf(a.stdout, "run:     maggot run %s -- <args>\n", t.Ref())
 			fmt.Fprintf(a.stdout, "direct:  %s <args>\n", strings.Join(quoteAll(direct), " "))
 			if len(m.Requires) > 0 {

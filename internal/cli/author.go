@@ -227,8 +227,22 @@ func (a *app) recordTest(ref string, rep testReport) {
 	if errMsg == "" {
 		errMsg = rep.TestsErr
 	}
+	var cases []testlog.Case
+	for _, c := range rep.Cases {
+		tc := testlog.Case{Name: c.Name, Status: "passed"}
+		switch {
+		case c.Skipped != "":
+			tc.Status, tc.Reason = "skipped", c.Skipped
+		case !c.Passed:
+			tc.Status = "failed"
+			if len(c.Failures) > 0 {
+				tc.Reason = firstLine(c.Failures[0])
+			}
+		}
+		cases = append(cases, tc)
+	}
 	_ = testlog.Save(ref, testlog.Record{Version: rep.manifest.Version, OK: rep.OK,
-		Passed: rep.Passed, Failed: rep.Failed, Skipped: rep.Skipped, Error: firstLine(errMsg)})
+		Passed: rep.Passed, Failed: rep.Failed, Skipped: rep.Skipped, Error: firstLine(errMsg), Cases: cases})
 }
 
 func (a *app) testAll(ctx context.Context, opts testOpts, asJSON bool) error {

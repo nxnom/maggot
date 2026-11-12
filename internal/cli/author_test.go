@@ -100,7 +100,10 @@ func TestTestAllRecordsResults(t *testing.T) {
 	if !strings.Contains(out, "ok 0m") || !strings.Contains(out, "FAIL 0m") {
 		t.Fatalf("list after test: %s", out)
 	}
-	if _, out, _ := run(t, "info", "bad-tool"); !strings.Contains(out, "tested:  FAILED") {
+	if _, out, _ := run(t, "info", "good-tool"); !strings.Contains(out, "✓ copies in upper case") || !strings.Contains(out, "✓ missing file fails") {
+		t.Fatalf("info cases: %s", out)
+	}
+	if _, out, _ := run(t, "info", "bad-tool"); !strings.Contains(out, "tested:  FAILED") || !strings.Contains(out, "✗ copies in upper case") {
 		t.Fatalf("info: %s", out)
 	}
 	if _, out, _ := run(t, "info", "hello"); !strings.Contains(out, "tested:  never") {
