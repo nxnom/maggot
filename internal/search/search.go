@@ -117,23 +117,39 @@ func Rank(tools []*toolbox.Tool, query string) []Hit {
 	return hits
 }
 
-// trigrams returns the set of 3-letter pieces of the words in s.
-func trigrams(s string) map[string]bool {
+// grams returns the 3-letter pieces of one word, with word edges marked.
+func grams(w string) map[string]bool {
 	out := map[string]bool{}
-	for _, w := range Words(s) {
-		w = " " + w + " "
-		for i := 0; i+3 <= len(w); i++ {
-			out[w[i:i+3]] = true
-		}
+	w = " " + w + " "
+	for i := 0; i+3 <= len(w); i++ {
+		out[w[i:i+3]] = true
 	}
 	return out
 }
 
-// Closest ranks tools by letter similarity to the query, for when Rank finds
-// nothing (typos, other word forms). It returns at most n tools with some
-// similarity.
+func jaccard(a, b map[string]bool) float64 {
+	common := 0
+	for g := range a {
+		if b[g] {
+			common++
+		}
+	}
+	if common == 0 {
+		return 0
+	}
+	return float64(common) / float64(len(a)+len(b)-common)
+}
+
+// minWordSimilarity is how alike a query word and a tool word must be to
+// count as a near match ("yotube" ~ "youtube" is 0.44, unrelated words ~0).
+const minWordSimilarity = 0.3
+
+// Closest finds tools whose words look like the query words, for when Rank
+// finds nothing (typos, other word forms). A tool qualifies only when at
+// least half of the query words are near a word of the tool, so unrelated
+// queries return nothing.
 func Closest(tools []*toolbox.Tool, query string, n int) []*toolbox.Tool {
-	q := trigrams(query)
+	q := Words(query)
 	if len(q) == 0 {
 		return nil
 	}
@@ -144,21 +160,33 @@ func Closest(tools []*toolbox.Tool, query string, n int) []*toolbox.Tool {
 	var all []scored
 	for _, t := range tools {
 		m := t.Manifest
-		doc := trigrams(strings.Join(append([]string{m.ID, m.Name, m.Description}, append(m.Tags, m.Categories...)...), " "))
-		common := 0
-		for g := range q {
-			if doc[g] {
-				common++
+		words := Words(strings.Join(append([]string{m.ID, m.Name, m.Description}, append(m.Tags, m.Categories...)...), " "))
+		docGrams := make([]map[string]bool, len(words))
+		for i, w := range words {
+			docGrams[i] = grams(w)
+		}
+		near, total := 0, 0.0
+		for _, qw := range q {
+			qg := grams(qw)
+			best := 0.0
+			for _, dg := range docGrams {
+				if s := jaccard(qg, dg); s > best {
+					best = s
+				}
+			}
+			if best >= minWordSimilarity {
+				near++
+				total += best
 			}
 		}
-		if common > 0 {
-			all = append(all, scored{t, float64(common) / float64(len(q))})
+		if near > 0 && near*2 >= len(q) {
+			all = append(all, scored{t, total / float64(len(q))})
 		}
 	}
 	sort.SliceStable(all, func(i, j int) bool { return all[i].score > all[j].score })
 	var out []*toolbox.Tool
 	for _, s := range all {
-		if s.score < 0.2 || len(out) == n {
+		if len(out) == n {
 			break
 		}
 		out = append(out, s.t)

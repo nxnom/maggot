@@ -85,4 +85,18 @@ func TestClosest(t *testing.T) {
 	if got := Closest(tools, "zzzz qqqq", 3); len(got) != 0 {
 		t.Fatalf("nothing similar: %v", got)
 	}
+	// A long description must not attract unrelated queries.
+	tts := tool("voxcpm-tts", "VoxCPM2 TTS", "Generate speech locally with VoxCPM2 (multilingual, incl. Burmese/English/Chinese): "+
+		"voice design from a text description, or voice cloning from a reference WAV (+ transcript for closer match). "+
+		"Single line or batch JSON/TXT with named voices, multiple takes, seed, tempo change (e.g. 1.4x). Runs on Apple MPS / CUDA / CPU.",
+		"tts", "text-to-speech", "voice", "voice-clone", "speech", "narrator", "voiceover")
+	all := append(tools, tts)
+	for _, q := range []string{"banana spaceship", "banana-spaceship", "spreadsheet pivot", "zzzz"} {
+		if got := Closest(all, q, 3); len(got) != 0 {
+			t.Errorf("%q should suggest nothing, got %v", q, got[0].Manifest.ID)
+		}
+	}
+	if got := Closest(all, "voise clonning", 3); len(got) == 0 || got[0].Manifest.ID != "voxcpm-tts" {
+		t.Errorf("typos should still find the TTS tool: %v", got)
+	}
 }
