@@ -133,3 +133,33 @@ func TestSkills(t *testing.T) {
 		t.Fatalf("tool resolve: %v", err)
 	}
 }
+
+func TestInitWritesRootGitignore(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, "g"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"node_modules/", "__pycache__/", ".venv/", ".DS_Store"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf(".gitignore lacks %q", want)
+		}
+	}
+	if strings.Contains(string(data), ".wav") || strings.Contains(string(data), "build/") {
+		t.Error("root .gitignore must not ignore media or build folders: a tool may ship them on purpose")
+	}
+	// an existing .gitignore is kept as it is
+	dir2 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir2, ".gitignore"), []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Init(dir2, "g2"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir2, ".gitignore")); string(b) != "mine\n" {
+		t.Errorf("existing .gitignore was changed: %q", b)
+	}
+}

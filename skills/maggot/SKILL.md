@@ -155,6 +155,12 @@ installed version; point them to it when you hand over.
    options people use (plus an `args` input for the rest), `outputs`. Give
    every `file`/`files` input an `accept` list (`[".json", ".txt"]`,
    `["audio/*"]`): the web UI file picker then shows only those files.
+   If the tool writes files into its own folder (a model cache, downloads, a
+   build or render folder), list them in a `.gitignore` inside the tool folder.
+   Common junk (`node_modules/`, `__pycache__/`, `.venv/`, `.DS_Store`) is
+   already ignored by the toolbox root; do not repeat it. Assets the tool ships
+   stay in git, so keep them small: compress them (e.g. sounds as `.ogg`) and
+   keep test fixtures small.
 5. Write `tests/cases.json` with small local fixtures, including a failure
    case, and `expect.checks` that verify the output content (e.g. ffprobe).
    Tests must be free and offline: mark cases that need the internet with

@@ -90,7 +90,38 @@ func Init(dir, name string) (*Toolbox, error) {
 	if err := f.Close(); err != nil {
 		return nil, err
 	}
+	if err := writeGitignore(abs); err != nil {
+		return nil, err
+	}
 	return &Toolbox{Handle: name, Path: abs, Meta: meta}, nil
+}
+
+// RootGitignore is what every tool folder can leave out of git. A tool's own
+// .gitignore lists only what that tool writes into its folder.
+const RootGitignore = `# maggot toolbox: only files that are junk in every tool.
+# Anything specific to one tool goes in that tool's own .gitignore.
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+`
+
+// writeGitignore creates the toolbox root .gitignore unless one exists.
+func writeGitignore(dir string) error {
+	f, err := os.OpenFile(filepath.Join(dir, ".gitignore"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if errors.Is(err, fs.ErrExist) {
+		return nil // never overwrite the user's file
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(RootGitignore); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // Open reads maggot.json in dir.

@@ -53,9 +53,17 @@ not need.
       tests/cases.json     tests for `maggot test`
       tests/fixtures/…     small sample inputs for tests
       .maggotignore        optional, globs to leave out of archives
+      .gitignore           optional, files this tool writes into its own folder
 
 The folder name must equal the tool `id`. A tool can contain anything it needs
 (vendored code, binaries, model files). Keep secrets out of the folder.
+
+Git: the toolbox root `.gitignore` (made by `maggot toolbox init`) ignores only
+what is junk in every tool: `node_modules/`, `__pycache__/`, `*.pyc`, `.venv/`,
+`.DS_Store`. A tool's own `.gitignore` lists what that tool writes into its
+folder (a model cache, downloads, a build or render folder). Media and other
+assets a tool ships on purpose stay in git, so keep them small: compress them
+(`.ogg` instead of `.wav`), or download big ones on first run into an ignored cache.
 
 ## tool.json
 
@@ -350,6 +358,7 @@ skills/video-short/
   scripts/        code the steps run (relative paths from the folder)
   references/     long docs the agent reads only when needed
   assets/         templates, images, fonts, shaders
+  .gitignore      optional, files the skill's scripts write into its folder
 ```
 
 ```yaml
