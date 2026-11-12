@@ -39,9 +39,9 @@ export function toast(message, isError = false) {
 
 // openDialog shows a modal. actions: [{label, class, onClick}] — onClick may
 // return false (or a promise of false) to keep the dialog open.
-export function openDialog({ title, body, actions = [], onClose }) {
+export function openDialog({ title, body, actions = [], onClose, className }) {
   const foot = h("div", { class: "dlg-foot" });
-  const dlg = h("dialog", { "aria-label": title },
+  const dlg = h("dialog", { "aria-label": title, class: className || null },
     h("div", { class: "dlg-head" }, h("h2", null, title)),
     h("div", { class: "dlg-body" }, body),
     foot);

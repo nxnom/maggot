@@ -34,7 +34,7 @@ export function pick({ mode = "dir", title, start, accept }) {
       h("input", { type: "checkbox", onchange: (e) => { showHidden = e.target.checked; refresh(); } }),
       h("span", null, "Show hidden files"));
 
-    const body = h("div", null,
+    const body = h("div", { class: "picker-body" },
       h("div", { class: "picker-path" },
         h("button", { class: "btn small", type: "button", onclick: () => up(), "aria-label": "Parent folder" }, "Up"),
         pathInput,
@@ -48,6 +48,7 @@ export function pick({ mode = "dir", title, start, accept }) {
     const chooseLabel = () => mode === "dir" ? "Choose this folder" : selected.size > 1 ? `Choose ${selected.size} files` : "Choose file";
     const { foot } = openDialog({
       title: title || (mode === "dir" ? "Choose a folder" : "Choose files"),
+      className: "picker",
       body,
       actions: [
         { label: "Cancel", class: "quiet" },

@@ -886,3 +886,9 @@ a.home-run:hover .home-run-name { text-decoration: underline; }
   .ic-code { color: #579DFF; }
   .ic-data { color: #F5CD47; }
 }
+
+/* Picker: a fixed-height dialog where only the file list scrolls. */
+dialog.picker[open] { display: flex; flex-direction: column; width: min(760px, calc(100vw - 32px)); height: min(720px, calc(100vh - 48px)); max-height: none; overflow: hidden; }
+dialog.picker .dlg-body { flex: 1; min-height: 0; max-height: none; overflow: hidden; display: flex; }
+.picker-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+dialog.picker .picker-list { flex: 1; min-height: 0; max-height: none; }
