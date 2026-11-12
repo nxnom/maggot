@@ -36,6 +36,9 @@ type prepareResult struct {
 	Output   map[string]any `json:"output"`
 	Warm     string         `json:"warm,omitempty"` // cold, loading, warm
 	Next     string         `json:"next,omitempty"`
+
+	args   []string // tool args the run would use
+	outDir string   // real output folder, when known
 }
 
 func (a *app) prepareCmd() *cobra.Command {
@@ -121,8 +124,10 @@ func (a *app) prepare(ctx context.Context, t *toolbox.Tool, values map[string]an
 			Fix: "leave out --out; the tool writes where its own args say, or into the current folder"})
 	case outDir != "":
 		res.Output["dir"] = outDir
+		res.outDir = outDir
 	case dirFlag != "" && !useInputs && hasFlagValue(raw, dirFlag) != "":
 		res.Output["dir"] = hasFlagValue(raw, dirFlag)
+		res.outDir, _ = filepath.Abs(hasFlagValue(raw, dirFlag))
 	case kind == manifest.OutputFiles || (kind == "" && dirFlag != ""):
 		res.Output["dir"] = cwd + " (no folder chosen, so the tool's default; usually the current folder)"
 		res.Warnings = append(res.Warnings, fmt.Sprintf("no output folder chosen; decide where the files belong (or ask the user) and pass --out, or %s in the tool args", dirFlag))
@@ -149,6 +154,7 @@ func (a *app) prepare(ctx context.Context, t *toolbox.Tool, values map[string]an
 	} else if outDir != "" && dirFlag != "" && !review {
 		args = append([]string{dirFlag, outDir}, raw...)
 	}
+	res.args = args
 	if argv, err := runner.Argv(t.Dir, m, args); err == nil {
 		res.Argv = argv
 		res.Command = strings.Join(quoteAll(argv), " ")

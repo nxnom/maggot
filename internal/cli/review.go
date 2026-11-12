@@ -32,17 +32,25 @@ func runManager() (*ui.Manager, error) {
 // runReview runs a tool into a run folder the user can look at in the web
 // UI, then prints how to move the files into place.
 func (a *app) runReview(t *toolbox.Tool, args []string, values map[string]any) error {
+	_, err := a.reviewRun(t, args, values, false)
+	return err
+}
+
+// reviewRun runs a tool into a held run folder. With quiet, the tool's
+// output goes to stderr and the closing hints are not printed (the caller
+// prints a JSON result instead).
+func (a *app) reviewRun(t *toolbox.Tool, args []string, values map[string]any, quiet bool) (*ui.RunMeta, error) {
 	m := t.Manifest
 	if m.Outputs == nil || m.Outputs.DirFlag == "" {
-		return fmt.Errorf("%s has no output folder flag (outputs.dir_flag), so its files cannot be held for review; run it without --review", t.Ref())
+		return nil, fmt.Errorf("%s has no output folder flag (outputs.dir_flag), so its files cannot be held for review; run it without --review", t.Ref())
 	}
 	mgr, err := runManager()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	env, err := a.secretEnv(t)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	env = append(env, warm.Env(t)...)
 	a.waitForWarm(t)
@@ -55,14 +63,18 @@ func (a *app) runReview(t *toolbox.Tool, args []string, values map[string]any) e
 	}
 	run, err := mgr.StartWith(t, opts)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	hist, ch, stop := run.Subscribe()
 	defer stop()
 	print := func(msg ui.Message) {
 		switch msg.Type {
 		case "out":
-			fmt.Fprintln(a.stdout, msg.Text)
+			if quiet {
+				fmt.Fprintln(a.stderr, msg.Text)
+			} else {
+				fmt.Fprintln(a.stdout, msg.Text)
+			}
 		case "err":
 			fmt.Fprintln(a.stderr, msg.Text)
 		}
@@ -88,6 +100,9 @@ loop:
 		}
 	}
 	meta := run.Meta()
+	if quiet {
+		return &meta, nil
+	}
 	files := mgr.Outputs(meta)
 	fmt.Fprintf(a.stderr, "\nreview run %s: %s, %d file(s) in %s\n", meta.ID, meta.Status, len(files), meta.OutDir)
 	for _, f := range files {
@@ -103,12 +118,12 @@ loop:
 		fmt.Fprintf(a.stderr, "if rejected: maggot runs rm %s\n", meta.ID)
 	}
 	if meta.ExitCode != nil && *meta.ExitCode != 0 {
-		return &exitError{code: *meta.ExitCode}
+		return &meta, &exitError{code: *meta.ExitCode}
 	}
 	if meta.Status != ui.StatusSucceeded {
-		return &exitError{code: 1}
+		return &meta, &exitError{code: 1}
 	}
-	return nil
+	return &meta, nil
 }
 
 func (a *app) takeCmd() *cobra.Command {

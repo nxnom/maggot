@@ -19,7 +19,7 @@ import (
 
 func (a *app) runCmd() *cobra.Command {
 	var inputs, outDir, events string
-	var skipChecks, dryRun, review bool
+	var skipChecks, dryRun, review, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "run <tool> [maggot flags] [-- tool args...]",
 		Short: "Run a tool (a thin wrapper; the tool also runs without maggot)",
@@ -47,6 +47,9 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 			}
 			// Plain words before "--" (e.g. "maggot run hello world") also go to the tool.
 			toolArgs := args[1:]
+			if asJSON && !dryRun {
+				return a.runJSON(cmd.Context(), t, inputs, toolArgs, outDir, review, skipChecks, events)
+			}
 			if review {
 				if outDir != "" || dryRun {
 					return errors.New("--review cannot be used with --out or --dry-run")
@@ -107,6 +110,7 @@ env vars are set. Use 'maggot doctor <tool>' for the full check with versions.`,
 	f.BoolVar(&skipChecks, "skip-checks", false, "do not check binaries and env before starting")
 	f.BoolVar(&dryRun, "dry-run", false, "print the command instead of running it")
 	f.BoolVar(&review, "review", false, "hold output files in a run folder for the user to review (see 'maggot take')")
+	f.BoolVar(&asJSON, "json", false, "stream the tool's output to stderr and print one JSON result (status, files, errors) to stdout")
 	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
 		return fmt.Errorf("%w\n(tool flags go after \"--\": maggot run <tool> -- --flag value)", err)
 	})

@@ -16,6 +16,7 @@ const makerManifest = `{"schema":1,"id":"maker","version":"1.0.0","name":"Maker"
 
 const makerScript = `#!/bin/sh
 [ "$1" = "--out" ] && { out="$2"; shift 2; }
+mkdir -p "$out"
 echo "making $1"
 echo "content $1" > "$out/$1.txt"
 `
