@@ -294,6 +294,9 @@ func (s *Server) apiRunFile(w http.ResponseWriter, r *http.Request) error {
 	}
 	mt := mimeOf(p)
 	w.Header().Set("Content-Type", mt)
+	// Never cache: files change between runs, and a cached copy would also
+	// keep old security headers.
+	w.Header().Set("Cache-Control", "no-store")
 	if needsSandbox(mt) {
 		w.Header().Set("Content-Security-Policy", "sandbox")
 	}

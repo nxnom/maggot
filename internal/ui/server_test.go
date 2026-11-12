@@ -279,6 +279,9 @@ func TestRunOverHTTP(t *testing.T) {
 		if got := rr.Header.Get("Content-Security-Policy"); got != want {
 			t.Errorf("%s: CSP %q, want %q", name, got, want)
 		}
+		if rr.Header.Get("Cache-Control") != "no-store" {
+			t.Errorf("%s: output files must not be cached", name)
+		}
 	}
 	// PDFs are served without the sandbox so the browser's PDF viewer works.
 	os.WriteFile(filepath.Join(final.OutDir, "doc.pdf"), []byte("%PDF-1.4"), 0o644)
