@@ -128,7 +128,9 @@ installed version; point them to it when you hand over.
    tries the tool later. Never depend on files in the current project.
 4. Write the program (none for bin). Fill `tool.json`: clear `description`,
    `tags` with search synonyms, `requires` with install hints, `inputs` for the
-   options people use (plus an `args` input for the rest), `outputs`.
+   options people use (plus an `args` input for the rest), `outputs`. Give
+   every `file`/`files` input an `accept` list (`[".json", ".txt"]`,
+   `["audio/*"]`): the web UI file picker then shows only those files.
 5. Write `tests/cases.json` with small local fixtures, including a failure
    case, and `expect.checks` that verify the output content (e.g. ffprobe).
    Tests must be free and offline: mark cases that need the internet with

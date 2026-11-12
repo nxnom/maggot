@@ -849,3 +849,10 @@ a.home-run:hover .home-run-name { text-decoration: underline; }
 .home-draft > a:hover { text-decoration: underline; }
 .log-note { margin: 6px 0; font-size: 12.5px; }
 .log-full { display: inline-block; margin-top: 6px; font-size: 12.5px; }
+
+/* ---------- picker: search + file type filter ---------- */
+.picker-search { width: 100%; margin-bottom: 8px; }
+.picker-filter { margin: 0 0 6px; font-size: 12.5px; }
+.picker-opts { gap: 18px; margin-top: 8px; flex-wrap: wrap; }
+.picker-rel { display: flex; flex-direction: column; min-width: 0; text-align: left; }
+.picker-rel .muted { font-size: 12px; overflow-wrap: anywhere; }

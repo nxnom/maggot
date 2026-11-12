@@ -184,7 +184,7 @@ function pathWidget(inp, id, described, changed) {
   const box = h("input", { class: "input mono", id, placeholder: inp.placeholder || (inp.type === "file" ? "/path/to/file" : "/path/to/folder"), "aria-describedby": described, oninput: changed, spellcheck: "false" });
   const browse = h("button", { class: "btn small", type: "button" }, "Browse…");
   browse.addEventListener("click", async () => {
-    const p = await pick({ mode: inp.type === "file" ? "file" : "dir", start: box.value || undefined });
+    const p = await pick({ mode: inp.type === "file" ? "file" : "dir", start: box.value || undefined, accept: inp.accept });
     if (p) { box.value = p; changed(); }
   });
   const el = h("div", { class: "drop" }, h("div", { class: "row" }, box, browse),
@@ -208,7 +208,7 @@ function filesWidget(inp, id, changed) {
   const add = (list) => { for (const p of list) if (!paths.includes(p)) paths.push(p); render(); changed(); };
   const browse = h("button", { class: "btn small", type: "button" }, "Add files…");
   browse.addEventListener("click", async () => {
-    const chosen = await pick({ mode: "files" });
+    const chosen = await pick({ mode: "files", accept: inp.accept });
     if (chosen) add(chosen);
   });
   const typed = h("input", { class: "input mono", placeholder: "Or type a path and press Enter", "aria-label": "Add a path", spellcheck: "false" });

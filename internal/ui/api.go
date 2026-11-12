@@ -196,33 +196,46 @@ func (s *Server) apiDefaultToolbox(w http.ResponseWriter, r *http.Request) error
 }
 
 // apiFS lists a folder for the folder/file picker.
-func (s *Server) apiFS(w http.ResponseWriter, r *http.Request) error {
-	q := r.URL.Query()
-	p := config.ExpandHome(q.Get("path"))
+type fsEntry struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Rel     string `json:"rel,omitempty"` // search results: path below the searched folder
+	Dir     bool   `json:"dir"`
+	Size    int64  `json:"size"`
+	Toolbox bool   `json:"toolbox,omitempty"`
+}
+
+// fsPath cleans a folder path from the picker; a file path means its folder.
+func (s *Server) fsPath(p string) (string, error) {
+	p = config.ExpandHome(p)
 	if p == "" {
 		p, _ = os.UserHomeDir()
 	}
 	if !filepath.IsAbs(p) {
-		return errors.New("path must be absolute")
+		return "", errors.New("path must be absolute")
 	}
 	p = filepath.Clean(p)
 	if info, err := os.Stat(p); err == nil && !info.IsDir() {
 		p = filepath.Dir(p)
 	}
+	return p, nil
+}
+
+func (s *Server) apiFS(w http.ResponseWriter, r *http.Request) error {
+	q := r.URL.Query()
+	p, err := s.fsPath(q.Get("path"))
+	if err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(p)
 	if err != nil {
 		return err
 	}
-	type entry struct {
-		Name    string `json:"name"`
-		Path    string `json:"path"`
-		Dir     bool   `json:"dir"`
-		Size    int64  `json:"size"`
-		Toolbox bool   `json:"toolbox,omitempty"`
-	}
 	hidden := q.Get("hidden") == "1"
 	files := q.Get("files") == "1"
-	out := []entry{}
+	accept := parseAccept(q.Get("accept"))
+	filtered := 0 // files left out because they don't match accept
+	out := []fsEntry{}
 	for _, e := range entries {
 		if !hidden && strings.HasPrefix(e.Name(), ".") {
 			continue
@@ -237,7 +250,11 @@ func (s *Server) apiFS(w http.ResponseWriter, r *http.Request) error {
 		if !isDir && !files {
 			continue
 		}
-		en := entry{Name: e.Name(), Path: full, Dir: isDir}
+		if !isDir && !accepts(e.Name(), accept) {
+			filtered++
+			continue
+		}
+		en := fsEntry{Name: e.Name(), Path: full, Dir: isDir}
 		if !isDir {
 			if info, err := e.Info(); err == nil {
 				en.Size = info.Size()
@@ -258,7 +275,7 @@ func (s *Server) apiFS(w http.ResponseWriter, r *http.Request) error {
 		parent = ""
 	}
 	_, isToolbox := os.Stat(filepath.Join(p, toolbox.FileName))
-	return ok(w, map[string]any{"path": p, "parent": parent, "entries": out, "toolbox": isToolbox == nil})
+	return ok(w, map[string]any{"path": p, "parent": parent, "entries": out, "toolbox": isToolbox == nil, "filtered": filtered})
 }
 
 func (s *Server) apiSearch(w http.ResponseWriter, r *http.Request) error {
