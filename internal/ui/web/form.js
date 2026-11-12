@@ -3,7 +3,7 @@
 import { h, clear, toast, debounce } from "./dom.js";
 import { upload } from "./api.js";
 import { pick } from "./picker.js";
-import { localKind, mediaURL, openLocalViewer } from "./viewer.js";
+import { localKind, localFile, mediaURL, openLocalViewer } from "./viewer.js";
 
 const titleOf = (inp) => inp.label || inp.name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -164,9 +164,39 @@ function enumWidget(inp, id, described, changed) {
   };
 }
 
+// Files must match the input's accept list (".json", "video/*"), like
+// the picker shows. File objects carry a type; paths are typed by extension.
+function matches(accept, name, type) {
+  if (!accept || !accept.length) return true;
+  const lower = name.toLowerCase();
+  const mime = (type || localFile(name).mime).toLowerCase();
+  return accept.some((a) => {
+    a = a.trim().toLowerCase();
+    if (!a) return false;
+    if (a.startsWith(".")) return lower.endsWith(a);
+    if (a.endsWith("/*")) return mime.startsWith(a.slice(0, -1));
+    return mime === a;
+  });
+}
+
+const KIND_WORDS = { "image/*": "images", "video/*": "videos", "audio/*": "audio files" };
+const acceptText = (accept) => accept.map((a) => KIND_WORDS[a] || a).join(", ");
+
+// keep returns the items that match; it tells the user about the rest.
+function keep(inp, items, nameOf, typeOf) {
+  const ok = items.filter((x) => matches(inp.accept, nameOf(x), typeOf(x)));
+  if (ok.length < items.length) {
+    const bad = items.filter((x) => !ok.includes(x)).map(nameOf).join(", ");
+    toast(`${titleOf(inp)} takes only ${acceptText(inp.accept)}, so ${bad} was not used.`, true);
+  }
+  return ok;
+}
+const keepFiles = (inp, files) => keep(inp, files, (f) => f.name || "pasted", (f) => f.type);
+const keepPaths = (inp, paths) => keep(inp, paths, (p) => p, () => "");
+
 // Dropping files on a widget uploads them to the maggot data folder and uses
 // the uploaded paths.
-function dropTarget(el, onPaths) {
+function dropTarget(el, inp, onPaths) {
   el.addEventListener("dragover", (e) => {
     if (!e.dataTransfer.types.includes("Files")) return;
     e.preventDefault(); e.stopPropagation(); el.classList.add("over");
@@ -175,8 +205,10 @@ function dropTarget(el, onPaths) {
   el.addEventListener("drop", async (e) => {
     if (!e.dataTransfer.files.length) return;
     e.preventDefault(); e.stopPropagation(); el.classList.remove("over");
+    const files = keepFiles(inp, [...e.dataTransfer.files]);
+    if (!files.length) return;
     try {
-      onPaths(await upload(e.dataTransfer.files));
+      onPaths(await upload(files));
     } catch (err) { toast(err.message, true); }
   });
 }
@@ -202,18 +234,20 @@ function textPaths(text) {
 
 // pasteTarget makes ⌘V inside el (on the box or any field in it) use a
 // copied image or copied files: they are uploaded like dropped files.
-function pasteTarget(el, onPaths) {
+function pasteTarget(el, inp, onPaths) {
   el.addEventListener("paste", async (e) => {
-    const files = [...(e.clipboardData?.files || [])];
+    let files = [...(e.clipboardData?.files || [])];
     if (!files.length) return; // plain text: let the field take it
     e.preventDefault();
-    try { onPaths(await upload(files.map(pastedName))); } catch (err) { toast(err.message, true); }
+    files = keepFiles(inp, files.map(pastedName));
+    if (!files.length) return;
+    try { onPaths(await upload(files)); } catch (err) { toast(err.message, true); }
   });
 }
 
 // pasteButton reads the clipboard on click: images are uploaded, copied
 // paths are used as they are.
-function pasteButton(onPaths) {
+function pasteButton(inp, onPaths) {
   return h("button", {
     class: "btn small", type: "button", title: `Paste a copied image or path (or click the box and press ${PASTE_KEY})`,
     onclick: async () => {
@@ -227,10 +261,16 @@ function pasteButton(onPaths) {
           if (type) files.push(pastedName(new File([await it.getType(type)], "image." + type.split("/")[1], { type })));
           else if (it.types.includes("text/plain")) text += await (await it.getType("text/plain")).text();
         }
-        if (files.length) return onPaths(await upload(files));
+        if (files.length) {
+          const ok = keepFiles(inp, files);
+          return ok.length ? onPaths(await upload(ok)) : undefined;
+        }
         const paths = textPaths(text);
-        if (paths.length) return onPaths(paths);
-        toast("The clipboard has no image or file path. Copy an image first.", true);
+        if (paths.length) {
+          const ok = keepPaths(inp, paths);
+          return ok.length ? onPaths(ok) : undefined;
+        }
+        toast("The clipboard has no file, image or file path to use here.", true);
       } catch (err) {
         toast(err.name === "NotAllowedError" ? `The browser blocked the clipboard. Click the box and press ${PASTE_KEY}.` : err.message, true);
       }
@@ -242,7 +282,7 @@ const isLocalPath = (p) => p.startsWith("/") || p.startsWith("~");
 
 // preview shows a local image, video or audio file, so the user can see
 // they picked the right one. Images open in the popup viewer.
-function mediaPreview() {
+function mediaPreview(onRemove) {
   const el = h("div", { class: "in-preview", hidden: true });
   let shown = "";
   function show(p) {
@@ -254,20 +294,26 @@ function mediaPreview() {
     el.hidden = false;
     const url = mediaURL(p);
     const info = h("span", { class: "muted" });
-    const bad = () => { if (shown === p) clear(el, h("p", { class: "in-preview-bad" }, "Cannot open this file. Check the path.")); };
+    const remove = h("button", { class: "btn small quiet", type: "button", "aria-label": "Remove " + p, onclick: onRemove }, "Remove");
+    const side = h("div", { class: "in-preview-side" }, info, remove);
+    const bad = () => { if (shown === p) clear(el, h("p", { class: "in-preview-bad" }, "Cannot open this file. Check the path."), remove); };
+    const open = () => openLocalViewer([p], 0);
     let media;
     if (kind === "image") {
-      media = h("button", { class: "in-preview-img", type: "button", title: "Open larger", "aria-label": "Open the image larger", onclick: () => openLocalViewer([p], 0) },
+      media = h("button", { class: "in-preview-media", type: "button", title: "Open larger", "aria-label": "Open the image larger", onclick: open },
         h("img", { src: url, alt: "", onerror: bad, onload: (e) => { info.textContent = `${e.target.naturalWidth} × ${e.target.naturalHeight}`; } }));
     } else if (kind === "video") {
-      media = h("video", {
-        src: url, controls: true, preload: "metadata", playsinline: true, onerror: bad,
-        onloadedmetadata: (e) => { info.textContent = `${e.target.videoWidth} × ${e.target.videoHeight} · ${duration(e.target.duration)}`; },
-      });
+      // A still frame; the popup plays it with controls.
+      media = h("button", { class: "in-preview-media", type: "button", title: "Play", "aria-label": "Play the video", onclick: open },
+        h("video", {
+          src: url + "#t=0.1", preload: "metadata", muted: true, playsinline: true, tabindex: "-1", onerror: bad,
+          onloadedmetadata: (e) => { info.textContent = `${e.target.videoWidth} × ${e.target.videoHeight} · ${duration(e.target.duration)}`; },
+        }),
+        h("span", { class: "play-badge", "aria-hidden": "true" }, "▶"));
     } else {
       media = h("audio", { src: url, controls: true, preload: "metadata", onerror: bad, onloadedmetadata: (e) => { info.textContent = duration(e.target.duration); } });
     }
-    clear(el, media, info);
+    clear(el, media, side);
   }
   return { el, show };
 }
@@ -280,7 +326,7 @@ function duration(sec) {
 
 function pathWidget(inp, id, described, changed) {
   const isFile = inp.type === "file";
-  const preview = isFile ? mediaPreview() : null;
+  const preview = isFile ? mediaPreview(() => setPath("")) : null;
   const update = debounce(() => preview && preview.show(box.value), 300);
   const box = h("input", { class: "input mono", id, placeholder: inp.placeholder || (isFile ? "/path/to/file" : "/path/to/folder"), "aria-describedby": described, oninput: () => { changed(); update(); }, spellcheck: "false" });
   const setPath = (p) => { box.value = p; changed(); preview && preview.show(p); };
@@ -290,12 +336,12 @@ function pathWidget(inp, id, described, changed) {
     if (p) setPath(p);
   });
   const el = h("div", { class: "drop" + (isFile ? " paste" : ""), tabindex: isFile ? "-1" : null },
-    h("div", { class: "row" }, box, browse, isFile ? pasteButton((paths) => setPath(paths[0])) : null),
+    h("div", { class: "row" }, box, browse, isFile ? pasteButton(inp, (paths) => setPath(paths[0])) : null),
     isFile ? h("div", { class: "hint" }, `Or drop a file here, or paste one (${PASTE_KEY}).`) : null,
     preview ? preview.el : null);
   if (isFile) {
-    dropTarget(el, (paths) => setPath(paths[0]));
-    pasteTarget(el, (paths) => setPath(paths[0]));
+    dropTarget(el, inp, (paths) => setPath(paths[0]));
+    pasteTarget(el, inp, (paths) => setPath(paths[0]));
   }
   return {
     el,
@@ -339,12 +385,16 @@ function filesWidget(inp, id, changed) {
   });
   const typed = h("input", { class: "input mono", placeholder: "Or type a path and press Enter", "aria-label": "Add a path", spellcheck: "false" });
   typed.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && typed.value.trim()) { e.preventDefault(); add([typed.value.trim()]); typed.value = ""; }
+    if (e.key === "Enter" && typed.value.trim()) {
+      e.preventDefault();
+      const ok = keepPaths(inp, [typed.value.trim()]);
+      if (ok.length) { add(ok); typed.value = ""; }
+    }
   });
-  const el = h("div", { class: "drop paste", tabindex: "-1" }, rows, h("div", { class: "row" }, browse, pasteButton(add), typed),
+  const el = h("div", { class: "drop paste", tabindex: "-1" }, rows, h("div", { class: "row" }, browse, pasteButton(inp, add), typed),
     h("div", { class: "hint" }, `Or drop files here, or paste copied images (${PASTE_KEY}). Click a file to preview it.`));
-  dropTarget(el, add);
-  pasteTarget(el, add);
+  dropTarget(el, inp, add);
+  pasteTarget(el, inp, add);
   return {
     el, group: true,
     get: () => (paths.length ? [...paths] : undefined),
