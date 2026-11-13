@@ -259,8 +259,9 @@ metadata:
 
 ## Steps
 
-1. TODO: first step. Name the exact command, for example:
-   `+"`python3 scripts/example.py <input>`"+` (paths are relative to this folder).
+1. TODO: first step. Name the exact command. Call scripts by skill name, not
+   by path, for example: `+"`maggot skill run %[1]s example.py <input>`"+`
+   (runs scripts/example.py; relative paths in the args are the caller's).
 2. TODO
 
 ## Rules

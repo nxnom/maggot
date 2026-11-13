@@ -94,3 +94,13 @@ func hasPEP723(path string) bool {
 	}
 	return bytes.Contains(b, []byte("\n# /// script")) || bytes.HasPrefix(b, []byte("# /// script"))
 }
+
+// hasScripts reports whether the file list has anything under scripts/.
+func hasScripts(files []string) bool {
+	for _, f := range files {
+		if strings.HasPrefix(filepath.ToSlash(f), "scripts/") {
+			return true
+		}
+	}
+	return false
+}

@@ -87,9 +87,13 @@ installed version; point them to it when you hand over.
    building it; ask the user before installing programs or setting secrets
    (`maggot secret set --skill <name> <NAME>`).
 3. Follow the steps. Run maggot tools as in "Use a tool". Run the skill's
-   own scripts from its folder by absolute path (`<folder>/scripts/x.py`);
-   never copy them into the project. When a script needs the skill's
-   secrets, run it as `maggot skill exec <name> -- <command>`.
+   own scripts with `maggot skill run <name> <script> [args...]`, for
+   example `maggot skill run video-short sfx.py rain.wav`. maggot finds the
+   script in the skill folder, picks the interpreter and adds the skill's
+   secrets. It runs in your current folder, so relative paths in the args
+   are your project's paths. Never copy scripts into the project and never
+   build the path yourself. Read a skill file with
+   `cat "$(maggot skill path <name> references/x.md)"`.
 4. If a step did not work or the user corrected you, propose a fix to the
    skill (see "Create or change a skill").
 
@@ -202,8 +206,13 @@ next time", "save this as a skill", "remember how we made this").
      (programs), `maggot-env` (secret names), each a space-separated string
    - the body: steps with exact commands, then the rules. Keep it under
      ~500 lines; put long docs in `references/`, code in `scripts/`,
-     templates and images in `assets/`. Paths are relative to the folder.
-3. Run every script once on a small example. Check with
+     templates and images in `assets/`. In the steps, write every script
+     call as `maggot skill run <name> <script> [args]` and every file read as
+     `maggot skill path <name> <file>`. Do not define a path variable
+     (like `SK`) and do not write absolute paths.
+3. Run every script once on a small example with
+   `maggot skill run <draft folder> <script> ...` (a folder path works as the
+   skill name while it is a draft). Check with
    `maggot skill show <folder>` until it is ready (or only secrets the user
    must set are missing).
 4. Hand it over: tell the user the folder and that they can read it in the

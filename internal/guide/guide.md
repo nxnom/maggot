@@ -373,7 +373,7 @@ the Agent Skills format and live in `<toolbox>/skills/<name>/`:
 ```
 skills/video-short/
   SKILL.md        frontmatter + instructions (keep under ~500 lines)
-  scripts/        code the steps run (relative paths from the folder)
+  scripts/        code the steps run (called with `maggot skill run`)
   references/     long docs the agent reads only when needed
   assets/         templates, images, fonts, shaders
   .gitignore      optional, files the skill's scripts write into its folder
@@ -387,7 +387,7 @@ metadata:
   version: 1.0.0
   maggot-uses: voxcpm-tts depth-map   # maggot tool ids (checked)
   maggot-requires: ffmpeg node        # programs on PATH (checked)
-  maggot-env: STABILITY_API_KEY       # secrets (checked; passed by skill exec)
+  maggot-env: STABILITY_API_KEY       # secrets (checked; passed by skill run)
 ---
 ```
 
@@ -395,9 +395,25 @@ Tool or script? Make a step a maggot tool when it is useful on its own (it
 gets a form, tests and search). Keep it as a script in the skill when it only
 makes sense inside this workflow.
 
+Call scripts and read files by skill name, never by path. The agent runs
+commands in the project folder, not in the skill folder, so `scripts/x.py`
+does not exist there. Write the steps like this:
+
+    maggot skill run my-skill x.py render scene.json --frames 1,3
+    cat "$(maggot skill path my-skill references/prompts.md)"
+
+`skill run` finds `scripts/<script>` in the skill folder, picks the
+interpreter (`.py` with a `# /// script` header: `uv run --script`; other
+`.py`: `python3`; `.sh`: `sh`; `.js`: `node`; `.ts`: `deno run -A`;
+executable files run directly), runs in the caller's folder, and adds the
+skill's secrets and `MAGGOT_SKILL_DIR`. While the skill is a draft, give the
+draft folder path in place of the name. Do not define a path variable in
+SKILL.md and do not write absolute paths.
+
 Workflow: propose the skill and wait for approval, `maggot skill new <name>`
 (drafts folder), write SKILL.md and scripts, run each script once,
 `maggot skill show <folder>` until it is ready, then hand it to the user.
 `maggot skill draft <name>` copies a toolbox skill to change it; bump
-`metadata.version`. Scripts that need the secrets run as
-`maggot skill exec <name> -- <command>`.
+`metadata.version`. Scripts that need the secrets also run with
+`maggot skill run <name> <script>`. Use `maggot skill exec <name> -- <command>`
+only to run a program that is not one of the skill's scripts.

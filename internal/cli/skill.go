@@ -443,6 +443,9 @@ func (a *app) printSkill(sk *toolbox.Skill, c workspace.SkillCheck, files []stri
 	if len(installed) > 0 {
 		fmt.Fprintf(w, "agents: installed for %s\n", strings.Join(installed, ", "))
 	}
+	if hasScripts(files) {
+		fmt.Fprintf(w, "run scripts with: maggot skill run %s <script> [args]   (read files: maggot skill path %s <file>)\n", sk.Meta.Name, sk.Meta.Name)
+	}
 	if len(files) > 0 {
 		fmt.Fprintln(w, "files (relative to the folder):")
 		for _, f := range files {
@@ -465,7 +468,8 @@ to the maggot drafts folder; edit it, let the user read it in 'maggot ui',
 then 'maggot import' the folder into the toolbox.
 
 Put scripts the steps run in scripts/, long docs in references/ and
-templates, images or fonts in assets/. Use a maggot tool instead of a script
+templates, images or fonts in assets/. Call scripts in the steps with
+'maggot skill run <name> <script> [args]' (no path needed). Use a maggot tool instead of a script
 when the job is useful on its own (it gets a form, tests and search).`,
 		Example: `  maggot skill new video-short --description "Make a 60 s horror short from stills. Use when ..."`,
 		Args:    cobra.ExactArgs(1),
@@ -567,7 +571,7 @@ skill declares in metadata.maggot-env added to the environment, plus
 MAGGOT_SKILL_DIR set to the skill folder. The command runs in the current
 directory; stdin, stdout, stderr and the exit code pass through. Secret
 values are never printed.`,
-		Example: `  maggot skill exec video-short -- python3 "$(maggot skill show video-short --json | jq -r .dir)/scripts/sfx.py" rain.wav`,
+		Example: `  maggot skill exec video-short -- ffmpeg -i in.mp4 out.mp3   (to run a script, use 'maggot skill run')`,
 		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.ArgsLenAtDash() != 1 {
