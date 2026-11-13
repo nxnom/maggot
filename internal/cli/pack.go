@@ -112,7 +112,7 @@ func (a *app) exportCmd() *cobra.Command {
 func (a *app) importCmd() *cobra.Command {
 	var force, yes, asJSON, keepDraft bool
 	cmd := &cobra.Command{
-		Use:   "import <file.maggot|file.zip|folder>...",
+		Use:   "import <file.maggot|file.zip|folder|draft-name>...",
 		Short: "Install tools or skills into a toolbox from archives or folders",
 		Long: `Install tools (tool.json) or skills (SKILL.md) into the default toolbox (or
 --toolbox): tools go to tools/<id>, skills to skills/<name>. Each source is
@@ -134,6 +134,7 @@ Installing an older or the same version over an existing one needs --force.`,
 			var results []pack.Preview
 			var failed []string
 			for _, src := range args {
+				src = draftPath(src)
 				s, err := pack.Stage(src, tb.ToolsPath())
 				if err != nil {
 					failed = append(failed, fmt.Sprintf("%s: %v", src, err))

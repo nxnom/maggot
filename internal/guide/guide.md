@@ -406,8 +406,9 @@ does not exist there. Write the steps like this:
 interpreter (`.py` with a `# /// script` header: `uv run --script`; other
 `.py`: `python3`; `.sh`: `sh`; `.js`: `node`; `.ts`: `deno run -A`;
 executable files run directly), runs in the caller's folder, and adds the
-skill's secrets and `MAGGOT_SKILL_DIR`. While the skill is a draft, give the
-draft folder path in place of the name. Do not define a path variable in
+skill's secrets and `MAGGOT_SKILL_DIR`. While the skill is a draft, use its draft
+name (`maggot drafts` lists drafts; use `draft/<name>` if a toolbox has the
+same name). Do not define a path variable in
 SKILL.md and do not write absolute paths.
 
 Workflow: propose the skill and wait for approval, `maggot skill new <name>`

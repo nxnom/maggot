@@ -155,11 +155,21 @@ func (a *app) toolDirArg(arg string) (dir, ref string, err error) {
 		}
 		return dir, "", nil
 	}
+	if strings.HasPrefix(arg, draftHandle+"/") {
+		if p, ok := draftToolDir(arg); ok {
+			return p, "", nil
+		}
+		return "", "", fmt.Errorf("no tool draft %q (see `maggot drafts`)", arg)
+	}
 	if envErr != nil {
 		return "", "", envErr
 	}
 	t, err := e.Set.Resolve(arg)
 	if err != nil {
+		if p, ok := draftToolDir(arg); ok {
+			fmt.Fprintf(a.stderr, "note: using the draft of %s (not imported yet)\n", arg)
+			return p, "", nil
+		}
 		return "", "", fmt.Errorf("%s is not a tool folder and %w", arg, err)
 	}
 	return t.Dir, t.Ref(), nil

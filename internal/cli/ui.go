@@ -57,7 +57,7 @@ func (a *app) uiRunCmd() *cobra.Command {
 func (a *app) tryCmd() *cobra.Command {
 	var noOpen bool
 	cmd := &cobra.Command{
-		Use:   "try <tool-folder>",
+		Use:   "try <tool-folder|draft-name>",
 		Short: "Try a tool folder in the web UI before importing it",
 		Long: `Open a tool folder (for example a draft an agent just made) in the web UI,
 where you can run it and import it when you are happy with it. The folder is
@@ -65,7 +65,7 @@ not added to your toolboxes or saved in the config. A running 'maggot ui' is
 reused; otherwise one is started.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := filepath.Abs(args[0])
+			dir, err := filepath.Abs(draftPath(args[0]))
 			if err != nil {
 				return err
 			}

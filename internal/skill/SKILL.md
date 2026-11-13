@@ -211,8 +211,9 @@ next time", "save this as a skill", "remember how we made this").
      `maggot skill path <name> <file>`. Do not define a path variable
      (like `SK`) and do not write absolute paths.
 3. Run every script once on a small example with
-   `maggot skill run <draft folder> <script> ...` (a folder path works as the
-   skill name while it is a draft). Check with
+   `maggot skill run <name> <script> ...` (a draft works by its name, or as
+   `draft/<name>` if a toolbox has the same name; `maggot drafts` lists them
+   and shows where each one is). Check with
    `maggot skill show <folder>` until it is ready (or only secrets the user
    must set are missing).
 4. Hand it over: tell the user the folder and that they can read it in the
@@ -269,6 +270,10 @@ model, use `maggot new <id> --lang python --warm`.
 - Run tools with their output flag pointing straight at where the result is
   needed (for example the project's assets folder). Do not write to a temp
   folder and then copy; if you had to, delete the temp folder afterwards.
+- `maggot drafts` lists the tool and skill drafts that are not imported yet
+  (they are not in `maggot list` or `maggot search`). `maggot test`,
+  `maggot try`, `maggot import` and `maggot skill show|run|path` take a draft
+  by name, or as `draft/<name>`.
 - Importing a draft from the drafts folder deletes the draft automatically.
   If the user does not want a draft, ask, then `maggot clean drafts <id> --yes`.
 - `maggot clean` shows leftovers (web UI runs, drafts, uploads); delete them

@@ -71,7 +71,20 @@ func (a *app) skillArg(e *env, arg string) (*toolbox.Skill, error) {
 		}
 		return &toolbox.Skill{Skill: sk, Toolbox: &toolbox.Toolbox{Handle: handle, Path: filepath.Dir(abs)}}, nil
 	}
-	return e.Set.ResolveSkill(arg)
+	if strings.HasPrefix(arg, draftHandle+"/") {
+		if sk, ok := draftSkill(arg); ok {
+			return sk, nil
+		}
+		return nil, fmt.Errorf("no skill draft %q (see `maggot drafts`)", arg)
+	}
+	sk, err := e.Set.ResolveSkill(arg)
+	if err != nil {
+		if d, ok := draftSkill(arg); ok {
+			fmt.Fprintf(a.stderr, "note: using the draft of %s (not imported yet)\n", arg)
+			return d, nil
+		}
+	}
+	return sk, err
 }
 
 func (a *app) skillCmd() *cobra.Command {
