@@ -203,9 +203,11 @@ next time", "save this as a skill", "remember how we made this").
    must set are missing).
 4. Hand it over: tell the user the folder and that they can read it in the
    web UI (`maggot ui`, under Drafts) and import it there. Import it yourself
-   (`maggot import <folder> --yes`) only when the user says so. After import,
-   `maggot skill install <name>` links it into Claude Code and Codex so they
-   load it on their own; ask first.
+   (`maggot import <folder> --yes`) only when the user says so. Installing is
+   optional: agents find skills with `maggot search` anyway. Offer
+   `maggot skill install <name>` (links it into Claude Code and Codex so they
+   load it on their own) only for skills the user runs often; each installed
+   skill adds to every session's context. Ask first.
 
 To change a skill: propose the change, then `maggot skill draft <name>`,
 edit the copy, bump `metadata.version`, and hand it over the same way. The
