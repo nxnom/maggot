@@ -99,7 +99,7 @@ maggot fields go under "metadata" in the SKILL.md frontmatter:
     maggot-env: STABILITY_API_KEY         # secrets (maggot secret set --skill)`,
 	}
 	cmd.AddCommand(a.skillListCmd(), a.skillShowCmd(), a.skillNewCmd(), a.skillDraftCmd(),
-		a.skillInstallCmd(), a.skillUninstallCmd(), a.skillExecCmd())
+		a.skillInstallCmd(), a.skillUninstallCmd(), a.skillExecCmd(), a.skillRunCmd(), a.skillPathCmd())
 	return cmd
 }
 
@@ -581,28 +581,105 @@ values are never printed.`,
 			if err != nil {
 				return err
 			}
-			store, err := a.secretStore()
-			if err != nil {
-				return err
-			}
-			extra, err := workspace.SkillSecretEnv(store, sk)
-			if err != nil {
-				return err
-			}
-			var missing []string
-			for _, s := range workspace.SkillEnv(store, sk) {
-				if !s.Set {
-					missing = append(missing, s.Name)
-				}
-			}
-			if len(missing) > 0 {
-				fmt.Fprintf(a.stderr, "warning: %s not set; the user can run `maggot secret set --skill %s <NAME>`\n", strings.Join(missing, ", "), sk.Meta.Name)
-			}
-			c := exec.CommandContext(cmd.Context(), args[1], args[2:]...)
-			c.Env = append(append(os.Environ(), extra...), "MAGGOT_SKILL_DIR="+sk.Dir)
-			c.Stdin, c.Stdout, c.Stderr = a.stdin, a.stdout, a.stderr
-			return a.wait(c)
+			return a.runInSkill(cmd, sk, args[1], args[2:])
 		},
 	}
 	return c
+}
+
+// runInSkill runs one command with the skill's secrets and MAGGOT_SKILL_DIR in
+// the environment. The command runs in the current directory.
+func (a *app) runInSkill(cmd *cobra.Command, sk *toolbox.Skill, name string, args []string) error {
+	store, err := a.secretStore()
+	if err != nil {
+		return err
+	}
+	extra, err := workspace.SkillSecretEnv(store, sk)
+	if err != nil {
+		return err
+	}
+	var missing []string
+	for _, s := range workspace.SkillEnv(store, sk) {
+		if !s.Set {
+			missing = append(missing, s.Name)
+		}
+	}
+	if len(missing) > 0 {
+		fmt.Fprintf(a.stderr, "warning: %s not set; the user can run `maggot secret set --skill %s <NAME>`\n", strings.Join(missing, ", "), sk.Meta.Name)
+	}
+	c := exec.CommandContext(cmd.Context(), name, args...)
+	c.Env = append(append(os.Environ(), extra...), "MAGGOT_SKILL_DIR="+sk.Dir)
+	c.Stdin, c.Stdout, c.Stderr = a.stdin, a.stdout, a.stderr
+	return a.wait(c)
+}
+
+func (a *app) skillRunCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "run <skill> <script> [args...]",
+		Short: "Run one of a skill's scripts (no path, no interpreter needed)",
+		Long: `Run a script from the skill folder. <script> is a file in the skill's
+scripts/ folder (or a path inside the skill folder, like scripts/x.py). maggot
+picks the interpreter from the file type:
+
+  .py   uv run --script when the file has a PEP 723 header ("# /// script"),
+        otherwise python3
+  .sh   sh            .js, .mjs  node            .ts  deno run -A
+  other files must be executable and are run directly
+
+The script runs in the current directory, so relative paths in the arguments
+(scene.json, out/) mean the caller's folder, not the skill folder. The skill's
+secrets (metadata.maggot-env) and MAGGOT_SKILL_DIR are added to the
+environment. Everything after the script name goes to the script as it is.`,
+		Example: `  maggot skill run cartoon-from-storyboard studio.py render scene.json --frames 1,3.5
+  maggot skill run video-short sfx.py rain.wav`,
+		Args: cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := a.loadEnv()
+			if err != nil {
+				return err
+			}
+			sk, err := a.skillArg(e, args[0])
+			if err != nil {
+				return err
+			}
+			argv, err := skillScriptCommand(sk.Dir, args[1], a.lookPath())
+			if err != nil {
+				return err
+			}
+			return a.runInSkill(cmd, sk, argv[0], append(argv[1:], args[2:]...))
+		},
+	}
+	c.Flags().SetInterspersed(false) // flags after <script> belong to the script
+	return c
+}
+
+func (a *app) skillPathCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "path <skill> [file]",
+		Short: "Print the skill folder, or the full path of a file inside it",
+		Long: `Print the absolute folder of a skill. With a file, print its absolute path
+(it must exist inside the skill folder). Use it to read references/ and
+assets/ files without knowing where the toolbox is. To run a script, use
+'maggot skill run' instead.`,
+		Example: `  cat "$(maggot skill path cartoon-from-storyboard references/prompts.md)"`,
+		Args:    cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			e, err := a.loadEnv()
+			if err != nil {
+				return err
+			}
+			sk, err := a.skillArg(e, args[0])
+			if err != nil {
+				return err
+			}
+			out := sk.Dir
+			if len(args) == 2 {
+				if out, err = skillFile(sk.Dir, args[1]); err != nil {
+					return err
+				}
+			}
+			_, err = fmt.Fprintln(a.stdout, out)
+			return err
+		},
+	}
 }

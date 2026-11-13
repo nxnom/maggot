@@ -118,6 +118,26 @@ func TestSkillLifecycle(t *testing.T) {
 		t.Fatalf("exit code %d", code)
 	}
 
+	// run: no path or interpreter needed; flags after the script go to the script.
+	if code, out, e := runApp(t, "", setup, "skill", "run", "clip-maker", "show.sh", "--flag", "x"); code != 0 || out != "token=tok\n" {
+		t.Fatalf("run: %d %q %s", code, out, e)
+	}
+	if code, out, e := runApp(t, "", setup, "skill", "run", "clip-maker", "scripts/show.sh"); code != 0 || out != "token=tok\n" {
+		t.Fatalf("run with scripts/ prefix: %d %q %s", code, out, e)
+	}
+	if code, _, e := runApp(t, "", setup, "skill", "run", "clip-maker", "../x.sh"); code == 0 || !strings.Contains(e, "not found") {
+		t.Fatalf("run outside the folder: %d %s", code, e)
+	}
+	if code, out, _ := runApp(t, "", setup, "skill", "path", "clip-maker"); code != 0 || strings.TrimSpace(out) != shown.Dir {
+		t.Fatalf("path: %d %q", code, out)
+	}
+	if code, out, _ := runApp(t, "", setup, "skill", "path", "clip-maker", "scripts/show.sh"); code != 0 || strings.TrimSpace(out) != filepath.Join(shown.Dir, "scripts", "show.sh") {
+		t.Fatalf("path file: %d %q", code, out)
+	}
+	if code, _, _ := runApp(t, "", setup, "skill", "path", "clip-maker", "../x"); code == 0 {
+		t.Fatal("path outside the folder must fail")
+	}
+
 	// Link into agents, then remove the skill: the links go too.
 	if code, out, e := run(t, "skill", "install", "clip-maker"); code != 0 || !strings.Contains(out, "(linked)") {
 		t.Fatalf("install: %s %s", out, e)
