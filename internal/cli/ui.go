@@ -126,7 +126,15 @@ func (a *app) serveUI(port int, noOpen bool, tryDirs []string) error {
 	ui.MarkRunning(actual)
 	defer ui.MarkStopped()
 
-	httpSrv := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	// Open streams (live run output) never end on their own, and Shutdown waits
+	// for them. Cancelling this context at stop time ends them at once.
+	connCtx, endConns := context.WithCancel(context.Background())
+	defer endConns()
+	httpSrv := &http.Server{
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return connCtx },
+	}
 	fmt.Fprintf(a.stdout, "maggot ui: %s\nPress Ctrl-C to stop.\n", link)
 	if !noOpen {
 		if err := ui.OpenBrowser(link); err != nil {
@@ -145,8 +153,12 @@ func (a *app) serveUI(port int, noOpen bool, tryDirs []string) error {
 	case <-ctx.Done():
 		fmt.Fprintln(a.stderr, "\nstopping…")
 	}
-	srv.Close()
-	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	endConns()
+	shutdown, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	return httpSrv.Shutdown(shutdown)
+	if err := httpSrv.Shutdown(shutdown); err != nil {
+		httpSrv.Close() // a slow client must not block the stop
+	}
+	srv.Close()
+	return nil
 }
