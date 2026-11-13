@@ -186,6 +186,24 @@ hints that do not change argv: `placeholder`, `group` (section title, e.g.
 `"Extras"`), `advanced: true` (hidden until the user opens advanced options).
 Map the options people really use; leave the rest to an `args` input.
 
+**Structured inputs must explain themselves.** `maggot info` is the only thing
+an agent reads before it runs a tool, so it must be enough to write a valid
+input. For any input that takes a structured file or text (a JSON batch, JSON
+lines, a manifest, a CSV), the input `description` must have:
+
+- one short valid example, on one line (the info table is one row per input)
+- the key names, and which are required
+- the path rule: relative paths are relative to what (the file itself, or the
+  working directory)
+- what overrides what (for example a per-item `style` beats `--style-file`)
+
+Example:
+
+    "description": "JSON file: {\"items\": [{\"name\": \"a\", \"prompt\": \"...\", \"refs\": [\"img/x.png\"]}]}. name and prompt are required. refs paths are relative to this JSON file. A per-item style beats --style-file."
+
+If an agent must open the README or the source to build a valid input, the
+tool is not finished.
+
 ### outputs
 
 `outputs` describes the result. It does not restrict the tool.

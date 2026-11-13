@@ -155,6 +155,11 @@ installed version; point them to it when you hand over.
    options people use (plus an `args` input for the rest), `outputs`. Give
    every `file`/`files` input an `accept` list (`[".json", ".txt"]`,
    `["audio/*"]`): the web UI file picker then shows only those files.
+   For every input that takes a structured file (JSON, JSON lines, CSV), put
+   one short valid example, the keys (required or not), the path rule (relative
+   to the file or to the working directory) and any override rule in the input
+   `description`. `maggot info` is all an agent reads, so it must be enough
+   without the README.
    If the tool writes files into its own folder (a model cache, downloads, a
    build or render folder), list them in a `.gitignore` inside the tool folder.
    Common junk (`node_modules/`, `__pycache__/`, `.venv/`, `.DS_Store`) is
