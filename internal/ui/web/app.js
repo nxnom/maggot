@@ -93,29 +93,32 @@ function renderSide() {
       }
       const names = [...groups.keys()].sort((a, b) => (a === "Other") - (b === "Other") || a.localeCompare(b));
       for (const g of names) {
-        if (names.length > 1) items.push(h("li", { class: "tool-group", "aria-hidden": "true" }, g));
+        if (names.length > 1) items.push(groupLabel(g, groups.get(g).length));
         groups.get(g).sort((a, b) => a.name.localeCompare(b.name)).forEach((t) => items.push(toolItem(t)));
       }
     }
     if (skills.length) {
-      items.push(h("li", { class: "tool-group", "aria-hidden": "true" }, "Skills"));
+      items.push(groupLabel("Skills", skills.length));
       skills.forEach((s) => items.push(skillItem(s)));
     }
     clear(list, items);
+  }
+  function groupLabel(name, n) {
+    return h("li", { class: "tool-group", "aria-hidden": "true" }, name, h("span", { class: "count" }, n));
   }
   function skillItem(s) {
     const showBox = boxes.length > 1 && !filter.toolbox;
     return h("li", null, h("a", {
       class: "tool-link", href: skillHash(s.ref), "aria-current": onSkill && current === s.ref ? "page" : null,
-    }, h("span", { class: "name" }, s.name, s.draft ? h("span", { class: "draft-flag", title: "Draft in progress" }, "draft") : null),
-    h("span", { class: "desc" }, showBox ? `${s.toolbox}: ${s.description}` : s.description)));
+      title: showBox ? `${s.toolbox}: ${s.description}` : s.description,
+    }, h("span", { class: "name" }, s.name, s.draft ? h("span", { class: "draft-flag", title: "Draft in progress" }, "draft") : null)));
   }
   function toolItem(t) {
     const showBox = boxes.length > 1 && !filter.toolbox;
     return h("li", null, h("a", {
       class: "tool-link", href: "#/tool/" + encodeURIComponent(t.ref), "aria-current": !onSkill && current === t.ref ? "page" : null,
-    }, h("span", { class: "name" }, t.name, t.draft ? h("span", { class: "draft-flag", title: `Draft v${t.draft.version} in progress` }, "draft") : null),
-    h("span", { class: "desc" }, showBox ? `${t.toolbox}: ${t.description}` : t.description)));
+      title: showBox ? `${t.toolbox}: ${t.description}` : t.description,
+    }, h("span", { class: "name" }, t.name, t.draft ? h("span", { class: "draft-flag", title: `Draft v${t.draft.version} in progress` }, "draft") : null)));
   }
   renderList();
 
@@ -132,7 +135,7 @@ function renderSide() {
     }, h("span", { class: "name" }, d.name, h("span", { class: "kind-chip small" }, "Skill")), h("span", { class: "desc" }, skillDraftLine(d)))))) : null;
 
   clear(side,
-    h("a", { class: "wordmark", href: "#/" }, "maggot", h("small", null, state.version)),
+    h("a", { class: "wordmark", href: "#/", title: state.version }, "maggot", h("small", null, shortVersion(state.version))),
     drafts,
     state.toolboxes.length ? [search, tbSelect, list] : h("p", { class: "muted", style: "margin:0;flex:1" }, "No toolbox yet."),
     h("div", { class: "side-foot" },
@@ -1023,6 +1026,12 @@ async function loadFiles(tool, el, startPath) {
 }
 
 // draftLine is the one-line summary of a draft in lists.
+// shortVersion keeps "v0.2.0" from a git-describe version like "v0.2.0-45-g4fe123f".
+function shortVersion(v) {
+  const m = /^v?\d+\.\d+\.\d+/.exec(v || "");
+  return m ? (m[0].startsWith("v") ? m[0] : "v" + m[0]) : v;
+}
+
 function draftLine(d) {
   if (d.error) return "Invalid tool.json";
   if (d.of) return `New version of ${d.of.name}: v${d.of.version} → v${d.version}`;
