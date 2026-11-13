@@ -1,6 +1,24 @@
-# maggot
+<p align="center">
+  <img src="assets/brand/maggot-icon-256.png" alt="maggot" width="120" height="120">
+</p>
 
-A shared toolbox of standalone CLI tools for you and your AI coding agents.
+<h1 align="center">maggot</h1>
+
+<p align="center">
+  A shared toolbox of CLI tools and skills for you and your AI coding agents.<br>
+  Build a tool once. Every project and every agent can find it, run it and improve it.
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="#skills">Skills</a> ·
+  <a href="#web-ui">Web UI</a> ·
+  <a href="#writing-tools">Writing tools</a>
+</p>
+
+---
 
 When an agent builds a useful utility in one project (resize images, convert
 video, merge PDFs, call some API), it usually disappears with that project.
@@ -42,8 +60,9 @@ maggot toolbox init ~/toolbox            # create and register a toolbox
 maggot skill install                     # SKILL.md for Claude Code and Codex
 
 maggot new text-upper --lang python      # → ~/.local/share/maggot/drafts/text-upper
-maggot test <that folder>                # validate + run tests/cases.json
-maggot try <that folder>                 # try it in the web UI, import from there
+maggot drafts                            # list drafts that are not imported yet
+maggot test text-upper                   # validate + run tests/cases.json (a draft works by name)
+maggot try text-upper                    # try it in the web UI, import from there
 
 maggot search upper case text
 maggot run text-upper -- --upper --out out notes.txt
@@ -61,6 +80,7 @@ maggot run text-upper -- --upper --out out notes.txt
 | `run <tool> -- <args>` | run a tool in the current folder; `--inputs '{json}'` builds args from the manifest; `--json` prints one structured result (status, files, errors) |
 | `new <id> --lang bin\|sh\|python\|deno` | scaffold a working tool with tests, in the drafts folder |
 | `draft <tool>` | copy an installed tool into the drafts folder to change it |
+| `drafts` | list tool and skill drafts that are not imported yet (`--json` for agents). Drafts work by name in `test`, `try`, `import` and `skill show/run/path` |
 | `try <folder>` | open a tool folder in the web UI to try it before importing |
 | `run <tool> --review -- …`, `take <run> <folder>` | hold output for review in the web UI, then move (not copy) the approved files into place |
 | `runs`, `runs rm <run>` | list or delete saved runs |
@@ -76,7 +96,9 @@ maggot run text-upper -- --upper --out out notes.txt
 | `skill list`, `skill show <name>` | toolbox skills, with a readiness check (tools, programs, secrets) |
 | `skill new <name>`, `skill draft <name>` | create a skill (Agent Skills format) or copy one to change it, in the drafts folder |
 | `skill install <name>` / `uninstall <name>` | link a toolbox skill into Claude Code / Codex skills folders (`--copy` to copy) |
-| `skill exec <name> -- <cmd>` | run a skill's script with its secrets in the environment |
+| `skill run <name> <script> [args]` | run a script from the skill folder: no path needed, the interpreter is picked from the file type, secrets are added, runs in the current folder |
+| `skill path <name> [file]` | print the skill folder, or the full path of a file in it (`references/`, `assets/`) |
+| `skill exec <name> -- <cmd>` | run any other command with the skill's secrets in the environment |
 | `ui` | local web UI: a form for every tool, live runs, output previews |
 | `guide` | full tool authoring reference |
 
@@ -110,6 +132,14 @@ metadata:
   maggot-requires: ffmpeg node           # programs needed on PATH
   maggot-env: STABILITY_API_KEY          # secrets (maggot secret set --skill)
 ---
+```
+
+Steps in a skill call its scripts by name, so they work from any project
+folder, with no path to build:
+
+```sh
+maggot skill run video-short sfx.py rain.wav        # runs scripts/sfx.py
+cat "$(maggot skill path video-short references/prompts.md)"
 ```
 
 Because skills live in `skills/` at the toolbox root, a toolbox pushed to
