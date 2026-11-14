@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -116,11 +117,15 @@ func (s *Server) apiState(w http.ResponseWriter, r *http.Request) error {
 	home, _ := os.UserHomeDir()
 	draftsDir, _ := config.DraftsDir()
 	skills, skillDrafts := s.skillState(ws)
+	archived := ws.Set.Archived()
+	if archived == nil {
+		archived = []toolbox.Archived{}
+	}
 	return ok(w, map[string]any{
 		"version": s.Version, "config_path": ws.Config.Path(), "data_dir": s.data, "home": home,
 		"selected": s.Selector != "", "toolboxes": boxes, "tools": rows, "problems": ws.AllProblems(),
 		"drafts": drafts, "drafts_dir": draftsDir, "warm": warmNow,
-		"skills": skills, "skill_drafts": skillDrafts,
+		"skills": skills, "skill_drafts": skillDrafts, "archived": archived,
 	})
 }
 
@@ -417,6 +422,68 @@ func (s *Server) apiRemoveTool(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return ok(w, map[string]string{"removed": t.Ref()})
+}
+
+// apiArchive moves a tool or skill (ref, optional kind=skill) to the archive.
+func (s *Server) apiArchive(w http.ResponseWriter, r *http.Request) error {
+	ref := r.URL.Query().Get("ref")
+	if isDraftRef(ref) {
+		return errors.New("drafts cannot be archived; use the draft's Remove button")
+	}
+	if isSkillReq(r) {
+		_, sk, draft, err := s.resolveSkill(ref)
+		if err != nil {
+			return err
+		}
+		if draft != nil {
+			return errors.New("drafts cannot be archived; use the draft's Remove button")
+		}
+		// Links in agents' skills folders would break, and agents would still find it.
+		if home, err := os.UserHomeDir(); err == nil {
+			for _, ag := range skill.Agents() {
+				skill.Unlink(home, ag, sk.Meta.Name, sk.Dir, false)
+			}
+		}
+		if err := sk.Toolbox.Archive(toolbox.KindSkill, sk.Meta.Name); err != nil {
+			return err
+		}
+		return ok(w, map[string]string{"archived": sk.Ref()})
+	}
+	_, t, err := s.resolve(r, "")
+	if err != nil {
+		return err
+	}
+	if err := t.Toolbox.Archive(toolbox.KindTool, t.Manifest.ID); err != nil {
+		return err
+	}
+	return ok(w, map[string]string{"archived": t.Ref()})
+}
+
+// apiRestore brings an archived tool or skill back.
+func (s *Server) apiRestore(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Toolbox string `json:"toolbox"`
+		Kind    string `json:"kind"`
+		Name    string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return err
+	}
+	if req.Kind != toolbox.KindTool && req.Kind != toolbox.KindSkill {
+		return errors.New("kind must be tool or skill")
+	}
+	ws, err := s.workspace()
+	if err != nil {
+		return err
+	}
+	tb, found := ws.Set.Toolbox(req.Toolbox)
+	if !found || req.Name == "" || req.Name != filepath.Base(req.Name) || strings.HasPrefix(req.Name, ".") {
+		return &httpError{code: http.StatusNotFound, msg: "no such archived item"}
+	}
+	if err := tb.Restore(req.Kind, req.Name); err != nil {
+		return err
+	}
+	return ok(w, map[string]string{"restored": tb.Handle + "/" + req.Name})
 }
 
 func (s *Server) apiHealth(w http.ResponseWriter, r *http.Request) error {

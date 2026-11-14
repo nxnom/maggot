@@ -775,3 +775,26 @@ func TestFSMedia(t *testing.T) {
 		t.Fatalf("no auth: %d", r.StatusCode)
 	}
 }
+
+func TestArchiveAndRestore(t *testing.T) {
+	ts := newTestServer(t)
+	ts.do(t, "POST", "/api/archive?ref=worker", nil, 200, nil)
+	var st struct {
+		Tools    []struct{ Ref string } `json:"tools"`
+		Archived []struct {
+			Kind, Name, Toolbox string
+		} `json:"archived"`
+	}
+	ts.do(t, "GET", "/api/state", nil, 200, &st)
+	for _, tl := range st.Tools {
+		if strings.HasSuffix(tl.Ref, "/worker") {
+			t.Fatal("archived tool still listed")
+		}
+	}
+	if len(st.Archived) != 1 || st.Archived[0].Name != "worker" || st.Archived[0].Kind != "tool" {
+		t.Fatalf("archived: %+v", st.Archived)
+	}
+	ts.do(t, "POST", "/api/restore", map[string]string{"toolbox": st.Archived[0].Toolbox, "kind": "tool", "name": "../worker"}, 404, nil)
+	ts.do(t, "POST", "/api/restore", map[string]string{"toolbox": st.Archived[0].Toolbox, "kind": "tool", "name": "worker"}, 200, nil)
+	ts.do(t, "GET", "/api/tool?ref=worker", nil, 200, nil)
+}

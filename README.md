@@ -90,6 +90,7 @@ maggot run text-upper -- --upper --out out notes.txt
 | `clean [runs\|drafts\|uploads\|all]` | show or delete leftovers in the data folder (never toolboxes or projects) |
 | `test <dir\|tool>`, `test --all` | validate and run `tests/cases.json`; network and paid cases only run with `--network` / `--paid`. Results show in `list`, `info` and the UI |
 | `import <file\|dir>`, `export <tool>`, `pack <dir>`, `remove <tool>` | share tools and skills as `.maggot` archives (zip files) |
+| `archive <tool\|skill>`, `restore <name>`, `archived` | hide an old tool or skill from search, list and agents without deleting it (moved to `<toolbox>/.archive/`) |
 | `secret set/rm/list` | store secret env values in the OS keychain, outside the toolbox (`--skill` for skills) |
 | `config [edit\|path\|show\|validate]` | maggot's own settings |
 | `skill install/uninstall/show` | maggot's own agent skill (no names) |

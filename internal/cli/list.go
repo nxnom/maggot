@@ -95,7 +95,7 @@ func (a *app) listCmd() *cobra.Command {
 				fmt.Fprintln(w, "TOOL\tVERSION\tTESTED\tDESCRIPTION")
 				now := time.Now()
 				for _, r := range rows {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, r.Version, testlog.Label(r.LastTest, r.Version, now), r.Description)
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, r.Version, testlog.Label(r.LastTest, r.Version, now), brief(r.Description, 80))
 				}
 			}
 			if len(skillRows) > 0 {
@@ -104,10 +104,14 @@ func (a *app) listCmd() *cobra.Command {
 				}
 				fmt.Fprintln(w, "SKILL\tVERSION\tREADY\tDESCRIPTION")
 				for _, r := range skillRows {
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, dash(r.Version), readyLabel(r.Ready, r.Missing), oneLine(r.Description, 90))
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, dash(r.Version), readyLabel(r.Ready, r.Missing), brief(r.Description, 80))
 				}
 			}
-			return w.Flush()
+			if err := w.Flush(); err != nil {
+				return err
+			}
+			a.archivedHint(e)
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")

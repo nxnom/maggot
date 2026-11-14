@@ -64,6 +64,7 @@ export async function skillPage(spec, ctx, main) {
         draft ? null : copyPrompt,
         h("button", { class: "btn", type: "button", onclick: () => post("/api/tool/open", { ref: sk.ref, kind: "skill" }).catch((e) => toast(e.message, true)) }, "Show folder"),
         h("a", { class: "btn", href: `/api/export?kind=skill&ref=${q(sk.ref)}` }, "Export"),
+        draft ? null : h("button", { class: "btn", type: "button", title: "Hide it from search, lists and agents. The folder is kept.", onclick: () => ctx.archive(sk.ref, sk.name) }, "Archive"),
         deleteBtn)),
     h("div", { class: "tp-desc-row" }, desc, more),
     draft ? draftNote(sk, draft, ctx, () => select("changes")) : null,

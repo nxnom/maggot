@@ -12,7 +12,7 @@ import { skillPage, skillHash, needsLabel } from "./skill.js";
 const side = document.getElementById("side");
 const main = document.getElementById("main");
 let state = null;
-let filter = { text: "", toolbox: store("filter:toolbox") || "", refs: null, skills: null };
+let filter = { text: "", toolbox: store("filter:toolbox") || "", refs: null, skills: null, archived: store("filter:archived") === "1" };
 let page = null; // cleanup for the current page
 
 // ---------- data ----------
@@ -44,6 +44,7 @@ const skillCtx = {
   stageImport: (src, draft) => stageImport(src, draft),
   setPage: (p) => { page = p; },
   refresh: () => { loadState().then(route); },
+  archive: (ref, name) => archiveItem(ref, name, "skill"),
 };
 
 // kindQ adds kind=skill to API calls about a skill; pageHash is the page URL.
@@ -51,6 +52,36 @@ const kindQ = (t) => (t.kind === "skill" ? "&kind=skill" : "");
 const pageHash = (t) => (t.kind === "skill" ? skillHash(t.ref) : "#/tool/" + encodeURIComponent(t.ref));
 
 // ---------- sidebar ----------
+
+// restoreItem brings an archived tool or skill back.
+async function restoreItem(it) {
+  try {
+    await post("/api/restore", { toolbox: it.toolbox, kind: it.kind, name: it.name });
+    toast(`Restored ${it.name}.` + (it.kind === "skill" ? " Run `maggot skill install " + it.name + "` to link it into your agents again." : ""));
+    await loadState();
+    route();
+  } catch (err) { toast(err.message, true); }
+}
+
+// archivedList shows archived tools and skills with a Restore button each.
+function archivedList(items, cls) {
+  return h("ul", { class: cls, "aria-label": "Archived" }, items.map((it) => h("li", { class: "archived-item", title: it.description || it.name },
+    h("span", { class: "name" }, it.name, h("span", { class: "kind-chip small" }, it.kind === "skill" ? "Skill" : "Tool")),
+    h("button", { class: "btn small", type: "button", onclick: () => restoreItem(it), "aria-label": `Restore ${it.name}` }, "Restore"))));
+}
+
+// archiveItem hides a tool or skill from search, lists and agents. It is not deleted.
+async function archiveItem(ref, name, kind) {
+  if (!(await confirmDialog(`Archive ${name}?`, h("div", null,
+    h("p", null, "It is hidden from search, the lists and agents, but the folder is kept in the toolbox's .archive folder."),
+    h("p", null, "You can bring it back with Restore. Turn on \"Show archived\" in the sidebar to see it.")), "Archive", false))) return;
+  try {
+    await post(`/api/archive?ref=${q(ref)}${kind === "skill" ? "&kind=skill" : ""}`);
+    toast(`Archived ${name}.`);
+    await loadState();
+    location.hash = "#/";
+  } catch (e) { toast(e.message, true); }
+}
 
 function renderSide() {
   if (!state) return;
@@ -73,6 +104,14 @@ function renderSide() {
   }, h("option", { value: "" }, "All toolboxes"), boxes.map((t) => h("option", { value: t.name, selected: filter.toolbox === t.name }, t.name))) : null;
 
   const list = h("ul", { class: "tool-list", "aria-label": "Tools" });
+  const archivedCount = (state.archived || []).length;
+  const showArchived = archivedCount ? h("label", { class: "check side-check" },
+    h("input", { type: "checkbox", checked: filter.archived, onchange: (e) => {
+      filter.archived = e.target.checked; store("filter:archived", filter.archived ? "1" : "");
+      renderList();
+      if (!location.hash || location.hash === "#/") route();
+    } }),
+    h("span", null, `Show archived (${archivedCount})`)) : null;
   function renderList() {
     let tools = state.tools.filter((t) => !filter.toolbox || t.toolbox === filter.toolbox);
     const items = [];
@@ -101,7 +140,21 @@ function renderSide() {
       items.push(groupLabel("Skills", skills.length));
       skills.forEach((s) => items.push(skillItem(s)));
     }
+    if (filter.archived) {
+      const term = filter.text.trim().toLowerCase();
+      const arch = (state.archived || []).filter((a) => (!filter.toolbox || a.toolbox === filter.toolbox)
+        && (!term || (a.name + " " + (a.description || "")).toLowerCase().includes(term)));
+      if (arch.length) {
+        items.push(groupLabel("Archived", arch.length));
+        arch.forEach((a) => items.push(archivedItemLi(a)));
+      }
+    }
     clear(list, items);
+  }
+  function archivedItemLi(a) {
+    return h("li", { class: "archived-item", title: a.description || a.name },
+      h("span", { class: "name" }, a.name, h("span", { class: "kind-chip small" }, a.kind === "skill" ? "Skill" : "Tool")),
+      h("button", { class: "btn small", type: "button", onclick: () => restoreItem(a), "aria-label": `Restore ${a.name}` }, "Restore"));
   }
   function groupLabel(name, n) {
     return h("li", { class: "tool-group", "aria-hidden": "true" }, name, h("span", { class: "count" }, n));
@@ -137,7 +190,7 @@ function renderSide() {
   clear(side,
     h("a", { class: "wordmark", href: "#/", title: state.version }, "maggot", h("small", null, shortVersion(state.version))),
     drafts,
-    state.toolboxes.length ? [search, tbSelect, list] : h("p", { class: "muted", style: "margin:0;flex:1" }, "No toolbox yet."),
+    state.toolboxes.length ? [search, tbSelect, showArchived, list] : h("p", { class: "muted", style: "margin:0;flex:1" }, "No toolbox yet."),
     h("div", { class: "side-foot" },
       h("a", { class: "btn small", href: "#/toolboxes" }, "Toolboxes"),
       state.toolboxes.length ? h("button", { class: "btn small", type: "button", onclick: importDialog }, "Import…") : null,
@@ -222,7 +275,16 @@ async function homePage() {
     clear(results, names.map((g) => h("section", { class: "tool-group-block" },
       h("h2", null, g, h("span", { class: "muted" }, String(groups.get(g).length))),
       h("div", { class: "tool-cards" }, groups.get(g).sort((a, b) => a.name.localeCompare(b.name)).map(card)))),
-    skills.length ? skillsBlock([...skills].sort((a, b) => a.name.localeCompare(b.name))) : null);
+    skills.length ? skillsBlock([...skills].sort((a, b) => a.name.localeCompare(b.name))) : null,
+    archivedBlock());
+  }
+  function archivedBlock() {
+    const arch = (state.archived || []).filter((a) => !filter.toolbox || a.toolbox === filter.toolbox);
+    if (!filter.archived || !arch.length) return null;
+    return h("section", { class: "tool-group-block" },
+      h("h2", null, "Archived", h("span", { class: "muted" }, String(arch.length))),
+      h("p", { class: "muted group-help" }, "Hidden from search and agents. Restore one to use it again."),
+      archivedList(arch, "home-list archived-list"));
   }
   const runSearch = debounce(async () => {
     const term = search.value.trim();
@@ -495,6 +557,7 @@ async function toolPage(spec) {
     if (!(await confirmDialog(`Delete ${m.name}?`, h("div", null, h("p", null, "This deletes the tool folder:"), h("p", null, h("code", null, tool.dir))), "Delete tool", true))) return;
     try { await del(`/api/tool?ref=${q(tool.ref)}`); toast(`Deleted ${m.name}.`); await loadState(); location.hash = "#/"; } catch (e) { toast(e.message, true); }
   } }, "Delete");
+  const archiveTool = draft ? null : h("button", { class: "btn", type: "button", title: "Hide it from search, lists and agents. The folder is kept.", onclick: () => archiveItem(tool.ref, m.name, "tool") }, "Archive");
   // One line: breadcrumb, name, version, chips | actions. The description
   // is clamped to one line ("More" expands it); the Docs tab has it all.
   const desc = h("p", { class: "tp-desc", title: m.description }, m.description);
@@ -515,6 +578,7 @@ async function toolPage(spec) {
       h("div", { class: "tp-actions" },
         h("button", { class: "btn", type: "button", onclick: () => openTool(tool) }, "Show folder"),
         h("a", { class: "btn", href: `/api/export?ref=${q(tool.ref)}` }, "Export"),
+        archiveTool,
         deleteTool)),
     h("div", { class: "tp-desc-row" }, desc, more),
     draft ? draftNote(draft, m, () => select("changes")) : null,

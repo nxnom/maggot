@@ -282,7 +282,7 @@ func (a *app) skillListCmd() *cobra.Command {
 			w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintln(w, "SKILL\tVERSION\tREADY\tDESCRIPTION")
 			for _, r := range rows {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, dash(r.Version), readyLabel(r.Ready, r.Missing), oneLine(r.Description, 90))
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Ref, dash(r.Version), readyLabel(r.Ready, r.Missing), brief(r.Description, 80))
 			}
 			return w.Flush()
 		},
@@ -312,6 +312,26 @@ func oneLine(s string, n int) string {
 		return string(r[:n-1]) + "…"
 	}
 	return s
+}
+
+// brief is the first sentence of a description, cut to n characters. Lists
+// and search stay short; `maggot info` and `skill show` have the full text.
+func brief(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	for i := 0; i+2 < len(s); i++ {
+		if s[i] == '.' && s[i+1] == ' ' && !strings.HasSuffix(s[:i], "e.g") && !strings.HasSuffix(s[:i], "i.e") && !strings.HasSuffix(s[:i], "etc") {
+			s = s[:i+1]
+			break
+		}
+	}
+	return oneLine(s, n)
+}
+
+// archivedHint tells the reader that some items are hidden.
+func (a *app) archivedHint(e *env) {
+	if n := len(e.Set.Archived()); n > 0 {
+		fmt.Fprintf(a.stdout, "(%d archived and hidden: see `maggot archived`)\n", n)
+	}
 }
 
 type agentState struct {

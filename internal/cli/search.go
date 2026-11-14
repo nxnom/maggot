@@ -80,7 +80,7 @@ several tools and scripts (maggot skill show).`,
 				w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 				fmt.Fprintln(w, "SKILL\tMATCHED\tDESCRIPTION")
 				for _, r := range skillRows {
-					fmt.Fprintf(w, "%s\t%s\t%s\n", r.Ref, strings.Join(r.Matched, ","), oneLine(r.Description, 100))
+					fmt.Fprintf(w, "%s\t%s\t%s\n", r.Ref, strings.Join(r.Matched, ","), brief(r.Description, 80))
 				}
 				w.Flush()
 				fmt.Fprintln(a.stdout, "(skills are steps for agents: read one with `maggot skill show <name>`)")
@@ -91,17 +91,22 @@ several tools and scripts (maggot skill show).`,
 				if len(closest) > 0 {
 					fmt.Fprintln(a.stdout, "closest (not a direct match):")
 					for _, c := range closest {
-						fmt.Fprintf(a.stdout, "  %s  %s\n", c.Ref, c.Description)
+						fmt.Fprintf(a.stdout, "  %s  %s\n", c.Ref, brief(c.Description, 80))
 					}
 				}
+				a.archivedHint(e)
 				return nil
 			}
 			w := tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintln(w, "TOOL\tMATCHED\tDESCRIPTION")
 			for _, h := range hits {
-				fmt.Fprintf(w, "%s\t%s\t%s\n", h.Tool.Ref(), strings.Join(h.Matched, ","), h.Tool.Manifest.Description)
+				fmt.Fprintf(w, "%s\t%s\t%s\n", h.Tool.Ref(), strings.Join(h.Matched, ","), brief(h.Tool.Manifest.Description, 80))
 			}
-			return w.Flush()
+			if err := w.Flush(); err != nil {
+				return err
+			}
+			a.archivedHint(e)
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON")

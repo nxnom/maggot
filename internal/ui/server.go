@@ -162,6 +162,8 @@ func (s *Server) Handler() http.Handler {
 	api("GET /api/search", s.apiSearch)
 	api("GET /api/tool", s.apiTool)
 	api("DELETE /api/tool", s.apiRemoveTool)
+	api("POST /api/archive", s.apiArchive)
+	api("POST /api/restore", s.apiRestore)
 	api("GET /api/tool/health", s.apiHealth)
 	api("POST /api/tool/install", s.apiInstall)
 	api("POST /api/tool/secret", s.apiSetSecret)
