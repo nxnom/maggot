@@ -24,6 +24,9 @@ program must run without maggot.
 4. Write the program (none for `bin`), update `tool.json`, `README.md` and
    `tests/cases.json`.
 5. Test until it passes: `maggot test <dir>`.
+   The result is kept for the draft. When the draft is imported with the same
+   version and no file changes after the test, `maggot list` shows it as tested.
+   If you change anything after the last test, test again before you hand it over.
 6. Hand it over: give the user the folder path and `maggot try <dir>`. They
    try it in the web UI and import it from there. Import it yourself
    (`maggot import <dir> --yes`) only when the user asks. Bump `version` for

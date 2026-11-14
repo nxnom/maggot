@@ -206,7 +206,7 @@ tools that stopped working, for example after a site or program changed.`,
 				return err
 			}
 			rep := a.testTool(cmd.Context(), dir, opts)
-			a.recordTest(ref, rep)
+			a.recordTest(ref, dir, rep)
 			if asJSON {
 				if err := writeJSON(a.stdout, rep); err != nil {
 					return err
@@ -227,11 +227,16 @@ tools that stopped working, for example after a site or program changed.`,
 	return cmd
 }
 
-// recordTest saves the result of an installed tool. Tools without tests are
-// not recorded, so they show as never tested.
-func (a *app) recordTest(ref string, rep testReport) {
-	if ref == "" || rep.manifest == nil || rep.noTests {
+// recordTest saves the result of a tool. An installed tool is saved under its
+// reference; a draft or other folder is saved under "draft/<id>" and moves
+// to the installed tool when it is imported unchanged. Tools without tests
+// are not recorded, so they show as never tested.
+func (a *app) recordTest(ref, dir string, rep testReport) {
+	if rep.manifest == nil || rep.noTests {
 		return
+	}
+	if ref == "" {
+		ref = testlog.DraftKey(rep.manifest.ID)
 	}
 	errMsg := rep.ManifestErr
 	if errMsg == "" {
@@ -252,7 +257,8 @@ func (a *app) recordTest(ref string, rep testReport) {
 		cases = append(cases, tc)
 	}
 	_ = testlog.Save(ref, testlog.Record{Version: rep.manifest.Version, OK: rep.OK,
-		Passed: rep.Passed, Failed: rep.Failed, Skipped: rep.Skipped, Error: firstLine(errMsg), Cases: cases})
+		Passed: rep.Passed, Failed: rep.Failed, Skipped: rep.Skipped, Error: firstLine(errMsg), Cases: cases,
+		Hash: testlog.DirHash(dir)})
 }
 
 func (a *app) testAll(ctx context.Context, opts testOpts, asJSON bool) error {
@@ -269,7 +275,7 @@ func (a *app) testAll(ctx context.Context, opts testOpts, asJSON bool) error {
 	failed, untested := 0, 0
 	for _, t := range tools {
 		rep := a.testTool(ctx, t.Dir, opts)
-		a.recordTest(t.Ref(), rep)
+		a.recordTest(t.Ref(), t.Dir, rep)
 		rows = append(rows, row{t.Ref(), rep})
 		switch {
 		case rep.noTests:

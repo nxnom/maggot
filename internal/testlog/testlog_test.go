@@ -32,3 +32,32 @@ func TestSaveLoadLabel(t *testing.T) {
 		t.Fatal("broken file should load as empty")
 	}
 }
+
+func TestAdoptNeedsSameVersionAndFiles(t *testing.T) {
+	t.Setenv("MAGGOT_DATA_DIR", t.TempDir())
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "run"), []byte("a"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "__pycache__"), 0o755)
+	h := DirHash(dir)
+	Save(DraftKey("x"), Record{Version: "1.0.0", OK: true, Passed: 2, Hash: h})
+
+	os.WriteFile(filepath.Join(dir, "__pycache__", "x.pyc"), []byte("junk"), 0o644)
+	if DirHash(dir) != h {
+		t.Fatal("caches must not change the hash")
+	}
+	if Adopt(DraftKey("x"), "box/x", "1.0.1", h) {
+		t.Fatal("different version adopted")
+	}
+	os.WriteFile(filepath.Join(dir, "run"), []byte("b"), 0o644)
+	if Adopt(DraftKey("x"), "box/x", "1.0.0", DirHash(dir)) {
+		t.Fatal("changed files adopted")
+	}
+	os.WriteFile(filepath.Join(dir, "run"), []byte("a"), 0o644)
+	if !Adopt(DraftKey("x"), "box/x", "1.0.0", DirHash(dir)) {
+		t.Fatal("same version and files not adopted")
+	}
+	all, _ := Load()
+	if _, still := all[DraftKey("x")]; still || all["box/x"].Passed != 2 {
+		t.Fatalf("after adopt: %+v", all)
+	}
+}

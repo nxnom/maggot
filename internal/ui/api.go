@@ -724,9 +724,13 @@ func (s *Server) apiImportStage(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	srcDir := ""
+	if info, err := os.Stat(src); err == nil && info.IsDir() {
+		srcDir = src
+	}
 	token := randomHex(8)
 	s.mu.Lock()
-	s.staged[token] = &stagedImport{staged: st, toolbox: tb.Handle, created: time.Now()}
+	s.staged[token] = &stagedImport{staged: st, toolbox: tb.Handle, created: time.Now(), src: srcDir}
 	s.mu.Unlock()
 	return ok(w, map[string]any{"token": token, "toolbox": tb.Handle, "preview": st.Preview, "needs_force": st.NeedsForce()})
 }
@@ -756,6 +760,9 @@ func (s *Server) apiImportCommit(w http.ResponseWriter, r *http.Request) error {
 	if err := st.staged.Commit(); err != nil {
 		st.staged.Discard()
 		return err
+	}
+	if st.staged.Kind == pack.KindTool && st.src != "" {
+		testlog.Adopt(testlog.DraftKey(st.staged.ID), st.toolbox+"/"+st.staged.ID, st.staged.Version, testlog.DirHash(st.src))
 	}
 	return ok(w, map[string]string{"ref": st.toolbox + "/" + st.staged.ID, "action": st.staged.Action, "kind": st.staged.Kind})
 }

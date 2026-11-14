@@ -63,6 +63,7 @@ type stagedImport struct {
 	staged  *pack.Staged
 	toolbox string
 	created time.Time
+	src     string // source folder, when imported from a folder (not an archive)
 }
 
 // New prepares a server using the user's data dir and secret store.

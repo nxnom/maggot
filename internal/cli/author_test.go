@@ -146,3 +146,29 @@ func TestNewDefaultsToDraftsAndDraftCommand(t *testing.T) {
 		t.Fatalf("second draft: %s", e)
 	}
 }
+
+// A test made on a draft counts for the installed tool when it is imported
+// unchanged, but not when the files changed after the test.
+func TestDraftTestResultFollowsImport(t *testing.T) {
+	isolate(t)
+	newToolbox(t, "main")
+	work := t.TempDir()
+	run(t, "new", "good-tool", "--lang", "sh", "--dir", work)
+	run(t, "new", "edited-tool", "--lang", "sh", "--dir", work)
+	for _, n := range []string{"good-tool", "edited-tool"} {
+		if code, out, _ := run(t, "test", filepath.Join(work, n)); code != 0 {
+			t.Fatalf("test %s: %s", n, out)
+		}
+	}
+	// Changed after the test: the result must not carry over.
+	os.WriteFile(filepath.Join(work, "edited-tool", "run.sh"), []byte("#!/bin/sh\nexit 1\n"), 0o755)
+
+	_, out, _ := run(t, "import", "--yes", filepath.Join(work, "good-tool"), filepath.Join(work, "edited-tool"))
+	if !strings.Contains(out, "kept the test result") {
+		t.Fatalf("import: %s", out)
+	}
+	_, out, _ = run(t, "list")
+	if !strings.Contains(out, "ok 0m") || !strings.Contains(out, "main/edited-tool  0.1.0    -") {
+		t.Fatalf("list: %s", out)
+	}
+}

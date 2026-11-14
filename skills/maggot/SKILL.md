@@ -176,6 +176,8 @@ installed version; point them to it when you hand over.
    `"network": true` and cases that cost money (paid APIs, image/video
    generation, LLM calls) with `"paid": true`; both are skipped unless the user
    asks. Run `maggot test <dir>` until every case passes.
+   Run it again after your last change: the result only counts for the
+   imported tool if the files are the same as when you tested.
 6. Hand it to the user. Do not import it yourself. Tell them the folder path
    and the command to try it in the web UI:
 

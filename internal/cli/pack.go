@@ -12,6 +12,7 @@ import (
 	"github.com/nxnom/maggot/internal/manifest"
 	"github.com/nxnom/maggot/internal/pack"
 	"github.com/nxnom/maggot/internal/skill"
+	"github.com/nxnom/maggot/internal/testlog"
 	"github.com/spf13/cobra"
 )
 
@@ -160,6 +161,14 @@ Installing an older or the same version over an existing one needs --force.`,
 					continue
 				}
 				results = append(results, s.Preview)
+				if s.Kind == pack.KindTool {
+					// A test made on the draft counts for the installed tool if nothing changed.
+					if info, err := os.Stat(src); err == nil && info.IsDir() {
+						if testlog.Adopt(testlog.DraftKey(s.ID), tb.Handle+"/"+s.ID, s.Version, testlog.DirHash(src)) && !asJSON {
+							fmt.Fprintln(a.stdout, "kept the test result of the draft")
+						}
+					}
+				}
 				if !asJSON {
 					kind := ""
 					if s.Kind == pack.KindSkill {
