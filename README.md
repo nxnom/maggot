@@ -227,3 +227,7 @@ make test    # go test ./...
 make vet
 make build
 ```
+
+## License
+
+[MIT](LICENSE)
