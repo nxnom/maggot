@@ -68,6 +68,21 @@ maggot search upper case text
 maggot run text-upper -- --upper --out out notes.txt
 ```
 
+### Install the skill with npx
+
+If you already use the `skills` installer, you can add maggot's skill to your
+agents (Claude Code, Codex, Cursor and others) straight from this repo:
+
+```sh
+npx skills add nxnom/maggot
+```
+
+This only installs the skill, which teaches agents to call `maggot`. You still
+need the `maggot` binary (see [Install](#install)). Prefer `maggot skill
+install` when you can: it writes the skill text that matches your binary, so
+they never get out of sync. After `maggot` upgrades, run it again (or
+`npx skills update`).
+
 ## Commands
 
 | command | what it does |
