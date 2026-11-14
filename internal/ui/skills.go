@@ -276,6 +276,9 @@ func (s *Server) apiDeleteSkillSecret(w http.ResponseWriter, r *http.Request) er
 // a tool by default, a skill with kind=skill. first is the file to list
 // first (tool.json or SKILL.md), entry the tool's entry file.
 func (s *Server) folderFor(r *http.Request, ref string, isSkill bool) (dir, first, entry, label string, err error) {
+	if r.URL.Query().Get("archived") == "1" {
+		return s.archivedFolder(r, ref, isSkill)
+	}
 	if isSkill {
 		if ref == "" {
 			ref = r.URL.Query().Get("ref")

@@ -37,6 +37,9 @@ func (tb *Toolbox) archivePath(kind, name string) string {
 	return filepath.Join(tb.Path, ArchiveDir, kind+"s", name)
 }
 
+// ArchivedPath is the folder of an archived tool or skill.
+func (tb *Toolbox) ArchivedPath(kind, name string) string { return tb.archivePath(kind, name) }
+
 func (tb *Toolbox) livePath(kind, name string) string {
 	if kind == KindSkill {
 		return filepath.Join(tb.SkillsPath(), name)

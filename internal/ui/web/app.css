@@ -984,7 +984,8 @@ dialog.picker .picker-list { flex: 1; min-height: 0; max-height: none; }
 .side-check { margin: 8px 2px 4px; font-size: 12.5px; color: var(--nav-2, var(--ink-2)); align-items: center; }
 .side-check input { width: 15px; height: 15px; margin: 0; }
 .archived-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; opacity: .75; }
-.archived-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.archived-item .name { color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
 .archived-item .btn { flex: none; }
 .archived-list { list-style: none; margin: 0; padding: 0; }
 .archived-list .archived-item { opacity: 1; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.archived-item .name:hover { text-decoration: underline; }

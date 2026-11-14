@@ -798,3 +798,26 @@ func TestArchiveAndRestore(t *testing.T) {
 	ts.do(t, "POST", "/api/restore", map[string]string{"toolbox": st.Archived[0].Toolbox, "kind": "tool", "name": "worker"}, 200, nil)
 	ts.do(t, "GET", "/api/tool?ref=worker", nil, 200, nil)
 }
+
+func TestArchivedItemFilesAreReadable(t *testing.T) {
+	ts := newTestServer(t)
+	ts.do(t, "POST", "/api/archive?ref=worker", nil, 200, nil)
+	var st struct {
+		Archived []struct{ Toolbox, Name string }
+	}
+	ts.do(t, "GET", "/api/state", nil, 200, &st)
+	ref := st.Archived[0].Toolbox + "/" + st.Archived[0].Name
+	var files struct{ Files []struct{ Path string } }
+	ts.do(t, "GET", "/api/tool/files?archived=1&ref="+ref, nil, 200, &files)
+	if len(files.Files) == 0 || files.Files[0].Path != "tool.json" {
+		t.Fatalf("files: %+v", files)
+	}
+	var file struct{ Text string }
+	ts.do(t, "GET", "/api/tool/file?archived=1&path=tool.json&ref="+ref, nil, 200, &file)
+	if !strings.Contains(file.Text, `"worker"`) {
+		t.Fatalf("file: %q", file.Text)
+	}
+	ts.do(t, "GET", "/api/tool/files?archived=1&ref="+st.Archived[0].Toolbox+"/..", nil, 404, nil)
+	ts.do(t, "GET", "/api/tool/file?archived=1&path=../../maggot.json&ref="+ref, nil, 404, nil)
+	ts.do(t, "GET", "/api/tool/files?archived=1&ref="+st.Archived[0].Toolbox+"/nope", nil, 404, nil)
+}

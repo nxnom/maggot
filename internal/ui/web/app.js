@@ -31,6 +31,7 @@ function route() {
   const hash = decodeURIComponent(location.hash.slice(1));
   if (hash.startsWith("/tool/")) return toolPage(hash.slice(6));
   if (hash.startsWith("/skill/")) return skillPage(hash.slice(7), skillCtx, main);
+  if (hash.startsWith("/archived/")) return archivedPage(hash.slice(10));
   if (hash === "/toolboxes") return toolboxesPage();
   return homePage();
 }
@@ -48,13 +49,21 @@ const skillCtx = {
 };
 
 // kindQ adds kind=skill to API calls about a skill; pageHash is the page URL.
-const kindQ = (t) => (t.kind === "skill" ? "&kind=skill" : "");
+const kindQ = (t) => (t.kind === "skill" ? "&kind=skill" : "") + (t.archived ? "&archived=1" : "");
 const pageHash = (t) => (t.kind === "skill" ? skillHash(t.ref) : "#/tool/" + encodeURIComponent(t.ref));
 
 // ---------- sidebar ----------
 
+// archivedHash is the page of an archived tool or skill.
+const archivedHash = (it) => "#/archived/" + [it.kind, it.toolbox, it.name].map(encodeURIComponent).join("/");
+
 // restoreItem brings an archived tool or skill back.
 async function restoreItem(it) {
+  const what = it.kind === "skill" ? "skill" : "tool";
+  if (!(await confirmDialog(`Restore ${it.name}?`, h("div", null,
+    h("p", null, `The ${what} comes back to its toolbox. It shows in search and the lists again, and agents can use it.`),
+    it.kind === "skill" ? h("p", null, "It is not linked into your agents again. Run ", h("code", null, "maggot skill install " + it.name), " for that.") : null),
+    "Restore", false))) return;
   try {
     await post("/api/restore", { toolbox: it.toolbox, kind: it.kind, name: it.name });
     toast(`Restored ${it.name}.` + (it.kind === "skill" ? " Run `maggot skill install " + it.name + "` to link it into your agents again." : ""));
@@ -66,7 +75,7 @@ async function restoreItem(it) {
 // archivedList shows archived tools and skills with a Restore button each.
 function archivedList(items, cls) {
   return h("ul", { class: cls, "aria-label": "Archived" }, items.map((it) => h("li", { class: "archived-item", title: it.description || it.name },
-    h("span", { class: "name" }, it.name, h("span", { class: "kind-chip small" }, it.kind === "skill" ? "Skill" : "Tool")),
+    h("a", { class: "name", href: archivedHash(it) }, it.name, h("span", { class: "kind-chip small" }, it.kind === "skill" ? "Skill" : "Tool")),
     h("button", { class: "btn small", type: "button", onclick: () => restoreItem(it), "aria-label": `Restore ${it.name}` }, "Restore"))));
 }
 
@@ -153,7 +162,8 @@ function renderSide() {
   }
   function archivedItemLi(a) {
     return h("li", { class: "archived-item", title: a.description || a.name },
-      h("span", { class: "name" }, a.name, h("span", { class: "kind-chip small" }, a.kind === "skill" ? "Skill" : "Tool")),
+      h("a", { class: "name", href: archivedHash(a), "aria-current": decodeURIComponent(location.hash) === decodeURIComponent(archivedHash(a)) ? "page" : null },
+        a.name, h("span", { class: "kind-chip small" }, a.kind === "skill" ? "Skill" : "Tool")),
       h("button", { class: "btn small", type: "button", onclick: () => restoreItem(a), "aria-label": `Restore ${a.name}` }, "Restore"));
   }
   function groupLabel(name, n) {
@@ -400,6 +410,38 @@ async function addToolbox() {
   toast("Toolbox added.");
   await loadState();
   route();
+}
+
+// ---------- archived ----------
+
+// archivedPage shows an archived tool or skill read-only: its description and
+// files. It cannot be run until it is restored.
+function archivedPage(spec) {
+  const [kind, toolboxName, ...rest] = spec.split("/");
+  const name = rest.join("/");
+  const it = (state.archived || []).find((a) => a.kind === kind && a.toolbox === toolboxName && a.name === name);
+  if (!it) {
+    return clear(main, h("h1", { class: "page-title" }, "Archived item not found"),
+      h("p", null, "It may have been restored or deleted."), h("a", { href: "#/" }, "Back to all tools"));
+  }
+  main.classList.add("tool-main");
+  page = { cleanup: () => main.classList.remove("tool-main") };
+  const files = h("div", { class: "code-browser" });
+  clear(main, h("div", { class: "tp" },
+    h("header", { class: "tp-head" },
+      h("div", { class: "tp-titlebar" },
+        h("div", { class: "tp-title" },
+          h("nav", { class: "tp-crumbs", "aria-label": "Breadcrumb" },
+            h("a", { href: "#/" }, "Archived"), h("span", { "aria-hidden": "true" }, "/"), h("span", null, it.toolbox), h("span", { "aria-hidden": "true" }, "/")),
+          h("h1", null, it.name),
+          h("span", { class: "kind-chip" }, it.kind === "skill" ? "Skill" : "Tool"),
+          h("span", { class: "tp-draft-badge" }, "Archived")),
+        h("div", { class: "tp-actions" },
+          h("button", { class: "btn green", type: "button", onclick: () => restoreItem(it) }, "Restore"))),
+      it.description ? h("p", { class: "tp-desc" }, it.description) : null,
+      h("p", { class: "notice", style: "margin:0" }, "This is archived: agents and search do not see it, and it cannot be run. Folder: ", h("code", null, it.path))),
+    h("section", { class: "tp-panel tp-panel-code" }, files)));
+  loadFiles({ ref: it.toolbox + "/" + it.name, kind: it.kind, archived: true }, files, it.kind === "skill" ? "SKILL.md" : "README.md");
 }
 
 // ---------- toolboxes ----------

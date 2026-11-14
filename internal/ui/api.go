@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nxnom/maggot/internal/agentskill"
 	"github.com/nxnom/maggot/internal/config"
 	"github.com/nxnom/maggot/internal/doctor"
 	"github.com/nxnom/maggot/internal/manifest"
@@ -457,6 +458,32 @@ func (s *Server) apiArchive(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	return ok(w, map[string]string{"archived": t.Ref()})
+}
+
+// archivedFolder resolves ref ("<toolbox>/<name>") to an archived tool or
+// skill folder, for the read-only viewer.
+func (s *Server) archivedFolder(r *http.Request, ref string, isSkill bool) (dir, first, entry, label string, err error) {
+	if ref == "" {
+		ref = r.URL.Query().Get("ref")
+	}
+	ws, err := s.workspace()
+	if err != nil {
+		return "", "", "", "", err
+	}
+	handle, name, _ := strings.Cut(ref, "/")
+	tb, found := ws.Set.Toolbox(handle)
+	if !found || name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+		return "", "", "", "", &httpError{code: http.StatusNotFound, msg: "no such archived item"}
+	}
+	kind, first := toolbox.KindTool, "tool.json"
+	if isSkill {
+		kind, first = toolbox.KindSkill, agentskill.FileName
+	}
+	dir = tb.ArchivedPath(kind, name)
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return "", "", "", "", &httpError{code: http.StatusNotFound, msg: "no such archived item"}
+	}
+	return dir, first, "", ref, nil
 }
 
 // apiRestore brings an archived tool or skill back.
