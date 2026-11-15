@@ -215,14 +215,19 @@ func (s *Server) apiDiff(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// has_old and has_new tell the UI which sides it can show.
+	res := map[string]any{"mime": mimeOf(rel), "has_old": a != nil, "has_new": b != nil, "old_size": len(a), "new_size": len(b)}
 	if isBinary(a) || isBinary(b) {
-		return ok(w, map[string]any{"binary": true, "old_size": len(a), "new_size": len(b)})
+		res["binary"] = true
+		return ok(w, res)
 	}
 	lines, tooBig := diffLines(fileLines(a), fileLines(b), 3)
 	if tooBig {
-		return ok(w, map[string]any{"too_large": true})
+		res["too_large"] = true
+		return ok(w, res)
 	}
-	return ok(w, map[string]any{"lines": lines})
+	res["lines"] = lines
+	return ok(w, res)
 }
 
 func isBinary(b []byte) bool {

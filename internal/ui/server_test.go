@@ -555,6 +555,16 @@ func TestToolFilesViewer(t *testing.T) {
 	if !file.Binary {
 		t.Fatal("png should be binary")
 	}
+	// The raw bytes are served with the right type, so the UI can show them.
+	raw, err := ts.client.Get(ts.URL + "/api/tool/raw?ref=worker&path=logo.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw.Body.Close()
+	if raw.StatusCode != 200 || raw.Header.Get("Content-Type") != "image/png" {
+		t.Fatalf("raw png: %d %v", raw.StatusCode, raw.Header)
+	}
+	ts.do(t, "GET", "/api/tool/raw?ref=worker&path=../../maggot.json", nil, 404, nil)
 	ts.do(t, "GET", "/api/tool/file?ref=worker&path=../../maggot.json", nil, 404, nil)
 	ts.do(t, "POST", "/api/tool/open", map[string]any{"ref": "worker"}, 200, nil)
 	if len(ts.opened) == 0 || ts.opened[len(ts.opened)-1] != dir {

@@ -190,6 +190,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/drafts", s.apiAddDraft)
 	api("GET /api/tool/files", s.apiToolFiles)
 	api("GET /api/tool/file", s.apiToolFile)
+	api("GET /api/tool/raw", s.apiToolRaw)
 	api("POST /api/tool/open", s.apiOpenTool)
 	api("GET /api/tool/presets", s.apiPresets)
 	api("POST /api/tool/presets", s.apiSavePreset)

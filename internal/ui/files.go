@@ -108,9 +108,49 @@ func (s *Server) apiToolFile(w http.ResponseWriter, r *http.Request) error {
 		head = head[:8192]
 	}
 	if bytes.IndexByte(head, 0) >= 0 || !utf8.Valid(trimPartialRune(head)) {
-		return ok(w, map[string]any{"binary": true, "size": info.Size()})
+		return ok(w, map[string]any{"binary": true, "size": info.Size(), "mime": mimeOf(p)})
 	}
-	return ok(w, map[string]any{"text": string(data), "size": info.Size(), "truncated": info.Size() > maxViewBytes})
+	return ok(w, map[string]any{"text": string(data), "size": info.Size(), "mime": mimeOf(p), "truncated": info.Size() > maxViewBytes})
+}
+
+// apiToolRaw serves one file's bytes, so the UI can show images, video,
+// audio and PDF. With side=old or side=new the file comes from the installed
+// version or the draft of a change (see apiDiff).
+func (s *Server) apiToolRaw(w http.ResponseWriter, r *http.Request) error {
+	var dir string
+	var err error
+	switch r.URL.Query().Get("side") {
+	case "old":
+		_, _, dir, err = s.changePair(r)
+	case "new":
+		dir, _, _, err = s.changePair(r)
+	default:
+		dir, _, _, _, err = s.folderFor(r, "", isSkillReq(r))
+	}
+	if err != nil {
+		return err
+	}
+	p, err := insideDir(dir, r.URL.Query().Get("path"))
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return os.ErrNotExist
+	}
+	mt := mimeOf(p)
+	w.Header().Set("Content-Type", mt)
+	w.Header().Set("Cache-Control", "no-store")
+	if needsSandbox(mt) {
+		w.Header().Set("Content-Security-Policy", "sandbox")
+	}
+	http.ServeContent(w, r, filepath.Base(p), info.ModTime(), f)
+	return nil
 }
 
 // trimPartialRune drops a UTF-8 sequence cut off at the end of b.

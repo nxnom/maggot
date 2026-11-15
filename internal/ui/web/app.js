@@ -7,6 +7,7 @@ import { renderMarkdown } from "./md.js";
 import { language, highlightLines } from "./hl.js";
 import { fileIcon, folderIcon } from "./icons.js";
 import { skillPage, skillHash, needsLabel } from "./skill.js";
+import { kindOf } from "./viewer.js";
 
 
 const side = document.getElementById("side");
@@ -50,6 +51,21 @@ const skillCtx = {
 
 // kindQ adds kind=skill to API calls about a skill; pageHash is the page URL.
 const kindQ = (t) => (t.kind === "skill" ? "&kind=skill" : "") + (t.archived ? "&archived=1" : "");
+// rawURL serves a tool or skill file as it is. side is "old" or "new" for the
+// two versions of a changed file.
+const rawURL = (t, path, side) => `/api/tool/raw?ref=${q(t.ref)}&path=${q(path)}${kindQ(t)}${side ? "&side=" + side : ""}`;
+
+// mediaEl shows an image, video, audio or PDF file. It returns null for
+// other kinds of files.
+function mediaEl(kind, url, path) {
+  const failed = (e) => e.target.replaceWith(h("p", { class: "muted" }, "Cannot show this file."));
+  if (kind === "image") return h("img", { src: url, alt: path, onerror: failed });
+  if (kind === "video") return h("video", { src: url, controls: true, preload: "metadata", playsinline: true, onerror: failed });
+  if (kind === "audio") return h("audio", { src: url, controls: true, preload: "metadata", onerror: failed });
+  if (kind === "pdf") return h("iframe", { src: url, title: path });
+  return null;
+}
+
 const pageHash = (t) => (t.kind === "skill" ? skillHash(t.ref) : "#/tool/" + encodeURIComponent(t.ref));
 
 // ---------- sidebar ----------
@@ -1046,18 +1062,28 @@ async function loadFiles(tool, el, startPath) {
     clear(view, h("p", { class: "muted" }, "Loading…"));
     let file;
     try { file = await get(`/api/tool/file?ref=${q(tool.ref)}&path=${q(f.path)}${kindQ(tool)}`); } catch (e) { return clear(view, h("p", { class: "notice" }, e.message)); }
-    if (file.binary) return clear(view, h("div", { class: "code-head" }, h("code", null, f.path), h("span", { class: "muted" }, bytes(file.size))), h("p", { class: "muted", style: "padding:12px" }, "Binary file, not shown."));
+    const kind = kindOf({ mime: file.mime || "", path: f.path });
+    const media = () => { const m = mediaEl(kind, rawURL(tool, f.path), f.path); return m && h("div", { class: "media-view" }, m); };
+    if (file.binary) {
+      return clear(view,
+        h("div", { class: "code-head" }, h("code", null, f.path),
+          h("span", { class: "code-head-right" }, h("span", { class: "muted" }, bytes(file.size)),
+            h("a", { class: "btn small", href: rawURL(tool, f.path), target: "_blank", rel: "noopener" }, "Open in new tab"))),
+        media() || h("p", { class: "muted", style: "padding:12px" }, "Binary file. There is no preview for this kind of file."));
+    }
     const text = file.text.replace(/\n$/, "");
     const lang = language(f.path, text);
     const lines = highlightLines(text, lang);
     const source = () => h("pre", { class: "code", tabindex: "0" }, lines.map((l) => h("span", { class: "ln" }, l, "\n")));
     const body = h("div", { class: "code-body" });
-    // Markdown opens rendered; "Source" shows the raw text.
+    // Markdown and text images (SVG) open rendered; "Source" shows the raw text.
+    const preview = lang === "markdown" ? () => h("div", { class: "md-preview", tabindex: "0" }, renderMarkdown(text))
+      : kind === "image" ? media : null;
     let toggle = null;
-    if (lang === "markdown") {
+    if (preview) {
       const mode = (m) => {
         toggle.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === m)));
-        clear(body, m === "preview" ? h("div", { class: "md-preview", tabindex: "0" }, renderMarkdown(text)) : source());
+        clear(body, m === "preview" ? preview() : source());
       };
       toggle = h("span", { class: "view-toggle", role: "group", "aria-label": "View" },
         h("button", { type: "button", "data-mode": "preview", onclick: () => mode("preview") }, "Preview"),
@@ -1206,10 +1232,17 @@ async function loadChanges(tool, el, wanted) {
     let d;
     try { d = await get(`/api/tool/diff?ref=${q(tool.ref)}&path=${q(f.path)}${kindQ(tool)}`); } catch (e) { return clear(view, h("p", { class: "notice" }, e.message)); }
     const head = h("div", { class: "diff-head" }, h("span", { class: "diff-status " + f.status }, f.status), h("code", null, f.path));
-    if (d.binary) return clear(view, head, h("p", { class: "muted" }, `Binary file: ${bytes(d.old_size)} → ${bytes(d.new_size)}.`));
-    if (d.too_large) return clear(view, head, h("p", { class: "muted" }, "This file is too large to compare here."));
+    // Images, video, audio and PDF: show the old and the new file side by side.
+    const kind = kindOf({ mime: d.mime || "", path: f.path });
+    const sides = [["old", "Before", d.has_old, d.old_size], ["new", "After", d.has_new, d.new_size]].filter((x) => x[2]);
+    const media = ["image", "video", "audio", "pdf"].includes(kind)
+      ? h("div", { class: "diff-media" }, sides.map(([side, name, , size]) =>
+        h("figure", null, h("figcaption", null, `${name} · ${bytes(size)}`), mediaEl(kind, rawURL(tool, f.path, side), f.path))))
+      : null;
+    if (d.binary) return clear(view, head, media || h("p", { class: "muted" }, `Binary file, no preview for this kind of file: ${bytes(d.old_size)} → ${bytes(d.new_size)}.`));
+    if (d.too_large) return clear(view, head, media, h("p", { class: "muted" }, "This file is too large to compare here."));
     const lang = language(f.path, "");
-    clear(view, head, h("div", { class: "diff", role: "table", "aria-label": "Changes in " + f.path }, d.lines.map((l) => {
+    clear(view, head, media, h("div", { class: "diff", role: "table", "aria-label": "Changes in " + f.path }, d.lines.map((l) => {
       if (l.op === "~") return h("div", { class: "diff-skip" }, `${l.skip} unchanged line${l.skip === 1 ? "" : "s"}`);
       const cls = l.op === "+" ? "add" : l.op === "-" ? "del" : "same";
       return h("div", { class: "diff-row " + cls },
